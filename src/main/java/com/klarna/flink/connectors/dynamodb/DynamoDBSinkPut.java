@@ -5,7 +5,7 @@ import com.amazonaws.services.dynamodbv2.model.PutItemResult;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.flink.util.Preconditions;
 
-public class DynamoDBSinkPut<IN> extends DynamoDBSinkBase<IN, PutItemResult> {
+public class DynamoDBSinkPut<IN> extends DynamoDBSink<IN, PutItemResult> {
 
     private final DynamoDBItemRequestMapper<IN, PutItemRequest> mapper;
 

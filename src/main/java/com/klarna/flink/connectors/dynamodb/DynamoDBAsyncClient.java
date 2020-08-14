@@ -44,10 +44,10 @@ public class DynamoDBAsyncClient {
        });
     }
 
-    public ListenableFuture<Void> batchWrite(Map<String, List<WriteRequest>> values) {
-        return listeningExecutorService.submit(new Callable<Void>() {
+    public ListenableFuture<BatchResponse> batchWrite(Map<String, List<WriteRequest>> values) {
+        return listeningExecutorService.submit(new Callable<BatchResponse>() {
             @Override
-            public Void call() throws Exception {
+            public BatchResponse call() throws Exception {
                 final BatchWriteItemRequest batchWriteItemRequest = new BatchWriteItemRequest();
                 boolean retry = false;
                 int retries = 0;
@@ -83,9 +83,9 @@ public class DynamoDBAsyncClient {
                     retries++;
                 }
                 if (retry && t != null) {
-                    throw new IOException(t);
+                    return new BatchResponse(false, t);
                 }
-                return null;
+                return new BatchResponse(true, null);
             }
         });
 

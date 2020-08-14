@@ -1,5 +1,6 @@
 package com.klarna.flink.connectors.dynamodb;
 
+import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -13,18 +14,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
-public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> implements CheckpointedFunction {
+public abstract class DynamoDBSink<T> extends RichSinkFunction<DynamoDBSinkInput<T>> implements CheckpointedFunction {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());
 
     protected transient DynamoDBAsyncClient client;
 
-    private FutureCallback<OUT> callback;
+    private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>();
+
+    private FutureCallback<BatchResponse> callback;
     private AtomicReference<Throwable> throwable;
     private Semaphore semaphore;
 
@@ -32,35 +38,34 @@ public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> imp
     private final DynamoDBBuilder builder;
     private final DynamoDBFailureHandler failureHandler;
 
-    protected DynamoDBSinkBase(final DynamoDBBuilder builder,
-                               final DynamoDBSinkBaseConfig config,
-                               final DynamoDBFailureHandler failureHandler) {
+    protected DynamoDBSink(final DynamoDBBuilder builder,
+                           final DynamoDBSinkBaseConfig config,
+                           final DynamoDBFailureHandler failureHandler) {
         this.builder = builder;
         this.config = config;
         this.failureHandler = failureHandler;
     }
 
     @Override
-    public void invoke(IN value, Context context) throws Exception {
+    public void invoke(DynamoDBSinkInput<T> value, Context context) throws Exception {
         checkAsyncErrors();
-        tryAcquire(1);
-        final ListenableFuture<OUT> result;
-        try {
-            result = send(value);
-        } catch (Throwable e) {
-            semaphore.release();
-            throw e;
+        semaphore.tryAcquire(1);
+        String tableName = value.tableName;
+        // initialize list correctly here
+        batchUnderProcess.get(tableName).add(new WriteRequest());
+        if (batchUnderProcess.size() >= 25) {
+            //init new list to use
+            batchUnderProcess.clear();
+            Futures.addCallback(client.batchWrite(batchUnderProcess), callback);
         }
-        Futures.addCallback(result, callback);
     }
-
-    protected abstract ListenableFuture<OUT> send(IN value);
 
     @Override
     public void open(Configuration parameters) throws Exception {
-        callback = new FutureCallback<OUT>() {
+        callback = new FutureCallback<BatchResponse>() {
             @Override
-            public void onSuccess(@Nullable OUT out) {
+            public void onSuccess(@Nullable BatchResponse out) {
+                // check status and set exception
                 semaphore.release();
             }
 
@@ -79,8 +84,6 @@ public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> imp
     @Override
     public void close() throws Exception {
         try {
-            checkAsyncErrors();
-            flush();
             checkAsyncErrors();
         } finally {
             try {
@@ -101,32 +104,12 @@ public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> imp
     @Override
     public void snapshotState(FunctionSnapshotContext ctx) throws Exception {
         checkAsyncErrors();
-        flush();
-        checkAsyncErrors();
     }
 
     private void checkAsyncErrors() throws Exception {
         final Throwable currentError = throwable.getAndSet(null);
         if (currentError != null) {
             failureHandler.onFailure(currentError);
-        }
-    }
-
-    private void flush() throws InterruptedException, TimeoutException {
-        tryAcquire(config.getMaxConcurrentRequests());
-        semaphore.release(config.getMaxConcurrentRequests());
-    }
-
-    private void tryAcquire(int permits) throws InterruptedException, TimeoutException {
-        if (!semaphore.tryAcquire(permits, config.getMaxConcurrentRequestsTimeout().toMillis(), TimeUnit.MILLISECONDS)) {
-            throw new TimeoutException(
-                    String.format(
-                            "Failed to acquire %d out of %d permits to send value in %s.",
-                            permits,
-                            config.getMaxConcurrentRequests(),
-                            config.getMaxConcurrentRequestsTimeout()
-                    )
-            );
         }
     }
 

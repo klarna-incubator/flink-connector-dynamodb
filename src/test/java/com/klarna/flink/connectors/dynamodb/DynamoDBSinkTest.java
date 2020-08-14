@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(5)
-public class DynamoDBSinkBaseTest {
+public class DynamoDBSinkTest {
 
     @Test
     void testSuccessfulPath() throws Exception {
@@ -272,7 +272,7 @@ public class DynamoDBSinkBaseTest {
         return testHarness;
     }
 
-    private static class TestDynamoDBSink extends DynamoDBSinkBase<String, String> implements AutoCloseable {
+    private static class TestDynamoDBSink extends DynamoDBSink<String, String> implements AutoCloseable {
 
         private final static AmazonDynamoDB amazonDynamoDB;
         private final static DynamoDBBuilder dynamoDBBuilder;
