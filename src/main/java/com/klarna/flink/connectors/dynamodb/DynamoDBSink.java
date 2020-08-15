@@ -48,7 +48,6 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     @Override
     public void invoke(DynamoDBWriteRequest value, Context context) throws Exception {
         checkAsyncErrors();
-        semaphore.tryAcquire(1);
         String tableName = value.getTableName();
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
                 k -> new ArrayList<>());
@@ -112,6 +111,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     }
 
     private void process() {
+        semaphore.tryAcquire(1);
         final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
         batchUnderProcess.clear();
         numPendingRequests = 0;
@@ -119,9 +119,8 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     }
 
     private void flush() throws Exception {
-        while (numPendingRequests > 0) {
+        if (numPendingRequests > 0) {
             process();
-            semaphore.wait();
             checkAsyncErrors();
         }
     }

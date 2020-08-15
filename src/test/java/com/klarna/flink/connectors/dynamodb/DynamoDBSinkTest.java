@@ -39,6 +39,22 @@ public class DynamoDBSinkTest {
     }
 
     @Test
+    void SnapshotShouldFlush() throws Exception {
+        try (TestDynamoDBSink testDynamoDBSink = createOpenedSink(DynamoDBSinkConfig.builder().batchSize(25).build())) {
+            testDynamoDBSink.enqueueListenableFuture(Futures.immediateFuture(null));
+            final int originalPermits = testDynamoDBSink.getAvailablePermits();
+            assertTrue(originalPermits > 0);
+            assertEquals(0, testDynamoDBSink.getAcquiredPermits());
+            testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                    new WriteRequest()), null);
+            // snapshot should flush
+            testDynamoDBSink.snapshotState(null);
+            assertEquals(originalPermits, testDynamoDBSink.getAvailablePermits());
+            assertEquals(0, testDynamoDBSink.getAcquiredPermits());
+        }
+    }
+
+    @Test
     public void testThrowErrorOnInvoke() throws Exception {
         try (TestDynamoDBSink testDynamoDBSink = createOpenedSink()) {
             Exception cause = new RuntimeException();
