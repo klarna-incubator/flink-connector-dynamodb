@@ -9,7 +9,7 @@ public class DynamoDBSinkConfig implements Serializable {
 
     private static final int DEFAULT_MAX_CONCURRENT_REQUESTS = 20;
     private static final Duration DEFAULT_MAX_CONCURRENT_REQUESTS_TIMEOUT = Duration.ofMillis(1000L);
-    private static final int DEFAULT_BATCH_SIZE = 25;
+    private static final int MAX_ALLOWED_BATCH_SIZE = 25;
 
     private final int maxConcurrentRequests;
 
@@ -48,7 +48,7 @@ public class DynamoDBSinkConfig implements Serializable {
 
     public static class Builder {
         private int maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS;
-        private int batchSize = DEFAULT_BATCH_SIZE;
+        private int batchSize = MAX_ALLOWED_BATCH_SIZE;
         private Duration maxConcurrentRequestsTimeout = DEFAULT_MAX_CONCURRENT_REQUESTS_TIMEOUT;
 
         public Builder maxConcurrentRequests(final int maxConcurrentRequests) {
@@ -57,7 +57,7 @@ public class DynamoDBSinkConfig implements Serializable {
         }
 
         public Builder batchSize(final int batchSize) {
-            this.batchSize = batchSize;
+            this.batchSize = Math.min(batchSize, MAX_ALLOWED_BATCH_SIZE);
             return this;
         }
 
