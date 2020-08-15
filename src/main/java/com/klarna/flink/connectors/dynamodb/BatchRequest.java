@@ -16,4 +16,5 @@ public class BatchRequest {
     public Map<String, List<WriteRequest>> getBatch() {
         return batch;
     }
+
 }
