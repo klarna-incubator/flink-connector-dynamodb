@@ -27,6 +27,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     protected transient DynamoDBWriter dynamoDBWriter;
 
     private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>();
+    private int numPendingRequests = 0;
 
     private FutureCallback<BatchResponse> callback;
     private AtomicReference<Throwable> throwable;
@@ -52,10 +53,9 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
                 k -> new ArrayList<>());
         writeRequests.add(value.getWriteRequest());
-        if (batchUnderProcess.size() >= config.getBatchSize()) {
-            final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
-            writeRequests.clear();
-            Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
+        numPendingRequests++;
+        if (numPendingRequests >= config.getBatchSize()) {
+            process();
         }
     }
 
@@ -86,6 +86,8 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     public void close() throws Exception {
         try {
             checkAsyncErrors();
+            flush();
+            checkAsyncErrors();
         } finally {
             try {
                 if (dynamoDBWriter != null) {
@@ -105,6 +107,23 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     @Override
     public void snapshotState(FunctionSnapshotContext ctx) throws Exception {
         checkAsyncErrors();
+        flush();
+        checkAsyncErrors();
+    }
+
+    private void process() {
+        final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
+        batchUnderProcess.clear();
+        numPendingRequests = 0;
+        Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
+    }
+
+    private void flush() throws Exception {
+        while (numPendingRequests > 0) {
+            process();
+            semaphore.wait();
+            checkAsyncErrors();
+        }
     }
 
     private void checkAsyncErrors() throws Exception {
