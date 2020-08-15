@@ -119,7 +119,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     }
 
     private void flush() throws Exception {
-        if (numPendingRequests > 0) {
+        while (numPendingRequests > 0) {
             process();
             checkAsyncErrors();
         }
