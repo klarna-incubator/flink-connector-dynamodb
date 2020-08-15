@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> implements CheckpointedFunction {
@@ -27,7 +28,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
     protected transient DynamoDBWriter dynamoDBWriter;
 
     private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>();
-    private int numPendingRequests = 0;
+    private AtomicLong numPendingRequests = new AtomicLong();
 
     private FutureCallback<BatchResponse> callback;
     private AtomicReference<Throwable> throwable;
@@ -52,8 +53,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
                 k -> new ArrayList<>());
         writeRequests.add(value.getWriteRequest());
-        numPendingRequests++;
-        if (numPendingRequests >= config.getBatchSize()) {
+        if (numPendingRequests.incrementAndGet() >= config.getBatchSize()) {
             process();
         }
     }
@@ -66,6 +66,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
                 if (out != null && !out.isSuccess()) {
                     throwable.compareAndSet(null, out.getT());
                 }
+                numPendingRequests.decrementAndGet();
                 semaphore.release();
             }
 
@@ -73,6 +74,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
             public void onFailure(Throwable t) {
                 throwable.compareAndSet(null, t);
                 logger.error("Error while sending value.", t);
+                numPendingRequests.decrementAndGet();
                 semaphore.release();
             }
         };
@@ -114,12 +116,11 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
         semaphore.tryAcquire(1);
         final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
         batchUnderProcess.clear();
-        numPendingRequests = 0;
         Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
     }
 
     private void flush() throws Exception {
-        while (numPendingRequests > 0) {
+        while (numPendingRequests.get() > 0) {
             process();
             checkAsyncErrors();
         }
