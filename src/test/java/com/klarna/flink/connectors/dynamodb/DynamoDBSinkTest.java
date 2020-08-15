@@ -2,11 +2,11 @@ package com.klarna.flink.connectors.dynamodb;
 
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
+import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.core.testutils.CheckedThread;
 import org.apache.flink.streaming.api.operators.StreamSink;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.junit.jupiter.api.Test;
@@ -14,11 +14,8 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -34,7 +31,8 @@ public class DynamoDBSinkTest {
             final int originalPermits = testDynamoDBSink.getAvailablePermits();
             assertTrue(originalPermits > 0);
             assertEquals(0, testDynamoDBSink.getAcquiredPermits());
-            testDynamoDBSink.invoke("N/A", null);
+            testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                    new WriteRequest()), null);
             assertEquals(originalPermits, testDynamoDBSink.getAvailablePermits());
             assertEquals(0, testDynamoDBSink.getAcquiredPermits());
         }
@@ -46,43 +44,25 @@ public class DynamoDBSinkTest {
             Exception cause = new RuntimeException();
             testDynamoDBSink.enqueueListenableFuture(Futures.immediateFailedFuture(cause));
 
-            testDynamoDBSink.invoke("Invoke1", null);
+            testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                    new WriteRequest()), null);
 
             Exception e = assertThrows(IOException.class, () -> {
-                testDynamoDBSink.invoke("Invoke2", null);
+                testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                        new WriteRequest()), null);
             });
             assertEquals(cause, e.getCause());
             assertEquals(0, testDynamoDBSink.getAcquiredPermits());
         }
     }
 
-//    @Test
-//    void testThrowErrorOnSnapshot() throws Exception {
-//        final TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink();
-//
-//        try (OneInputStreamOperatorTestHarness<String, Object> testHarness = createOpenedTestHarness(testDynamoDBSink)) {
-//            Exception cause = new RuntimeException();
-//            testDynamoDBSink.enqueueListenableFuture(Futures.immediateFailedFuture(cause));
-//
-//            testDynamoDBSink.invoke("N/A", null);
-//
-//            CheckpointException e = assertThrows(CheckpointException.class, () -> {
-//                testHarness.snapshot(123L, 123L);
-//            });
-//
-//            Optional<IOException> serializedThrowable = findSerializedThrowable(e, IOException.class, ClassLoader.getSystemClassLoader());
-//
-//            assertTrue(serializedThrowable.isPresent());
-//
-//        }
-//    }
-
     @Test
     void testThrowErrorOnClose() throws Exception {
         try(TestDynamoDBSink testDynamoDBSink = createOpenedSink()) {
             Exception cause = new RuntimeException();
             testDynamoDBSink.enqueueListenableFuture(Futures.immediateFailedFuture(cause));
-            testDynamoDBSink.invoke("N/A", null);
+            testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                    new WriteRequest()), null);
             IOException e = assertThrows(IOException.class, () -> {
                 testDynamoDBSink.close();
             });
@@ -91,81 +71,20 @@ public class DynamoDBSinkTest {
     }
 
     @Test
-    void testWaitForPendingUpdatesOnSnapshot() throws Exception {
-        final TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink();
-
-        try (OneInputStreamOperatorTestHarness<String, Object> testHarness = createOpenedTestHarness(testDynamoDBSink)) {
-            SettableFuture<String> settableFuture = SettableFuture.create();
-            testDynamoDBSink.enqueueListenableFuture(settableFuture);
-
-            testDynamoDBSink.invoke("N/A", null);
-            assertEquals(1, testDynamoDBSink.getAcquiredPermits());
-
-            final CountDownLatch latch = new CountDownLatch(1);
-            Thread t = new CheckedThread("Flink-DynamoDbSinkBaseTest") {
-                @Override
-                public void go() throws Exception {
-                    testHarness.snapshot(123L, 123L);
-                    latch.countDown();
-                }
-            };
-            t.start();
-            while (t.getState() != Thread.State.TIMED_WAITING) {
-                Thread.sleep(5);
-            }
-
-            assertEquals(1, testDynamoDBSink.getAcquiredPermits());
-            settableFuture.set(null);
-            latch.await();
-            assertEquals(0, testDynamoDBSink.getAcquiredPermits());
-        }
-    }
-
-    @Test
-    void testWaitForPendingUpdatesOnClose() throws Exception {
-        final TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink();
-
-        try (OneInputStreamOperatorTestHarness<String, Object> testHarness = createOpenedTestHarness(testDynamoDBSink)) {
-
-            SettableFuture<String> settableFuture = SettableFuture.create();
-            testDynamoDBSink.enqueueListenableFuture(settableFuture);
-
-            testDynamoDBSink.invoke("N/A", null);
-            assertEquals(1, testDynamoDBSink.getAcquiredPermits());
-
-            final CountDownLatch latch = new CountDownLatch(1);
-            Thread t = new CheckedThread("Flink-DynamoDBSinkBaseTest") {
-                @Override
-                public void go() throws Exception {
-                    testHarness.close();
-                    latch.countDown();
-                }
-            };
-            t.start();
-            while (t.getState() != Thread.State.TIMED_WAITING) {
-                Thread.sleep(5);
-            }
-
-            assertEquals(1, testDynamoDBSink.getAcquiredPermits());
-            settableFuture.set(null);
-            latch.await();
-            assertEquals(0, testDynamoDBSink.getAcquiredPermits());
-        }
-    }
-
-    @Test
     void testReleaseOnSuccess() throws Exception {
-        final DynamoDBSinkBaseConfig config = DynamoDBSinkBaseConfig.builder()
+        final DynamoDBSinkConfig config = DynamoDBSinkConfig.builder()
                 .maxConcurrentRequests(1)
+                .batchSize(1)
                 .build();
 
         try (TestDynamoDBSink testDynamoDBSink = createOpenedSink(config)) {
             assertEquals(1, testDynamoDBSink.getAvailablePermits());
             assertEquals(0, testDynamoDBSink.getAcquiredPermits());
 
-            SettableFuture<String> settableFuture = SettableFuture.create();
+            SettableFuture<BatchResponse> settableFuture = SettableFuture.create();
             testDynamoDBSink.enqueueListenableFuture(settableFuture);
-            testDynamoDBSink.invoke("N/A", null);
+            testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                    new WriteRequest()), null);
 
             assertEquals(0, testDynamoDBSink.getAvailablePermits());
             assertEquals(1, testDynamoDBSink.getAcquiredPermits());
@@ -179,8 +98,9 @@ public class DynamoDBSinkTest {
 
     @Test
     void testReleaseOnFailure() throws Exception {
-        final DynamoDBSinkBaseConfig config = DynamoDBSinkBaseConfig.builder()
+        final DynamoDBSinkConfig config = DynamoDBSinkConfig.builder()
                 .maxConcurrentRequests(1)
+                .batchSize(1)
                 .build();
         final DynamoDBFailureHandler failureHandler = ignored -> {};
 
@@ -188,9 +108,10 @@ public class DynamoDBSinkTest {
             assertEquals(1, testDynamoDBSink.getAvailablePermits());
             assertEquals(0, testDynamoDBSink.getAcquiredPermits());
 
-            SettableFuture<String> settableFuture = SettableFuture.create();
+            SettableFuture<BatchResponse> settableFuture = SettableFuture.create();
             testDynamoDBSink.enqueueListenableFuture(settableFuture);
-            testDynamoDBSink.invoke("N/A", null);
+            testDynamoDBSink.invoke(new DynamoDBWriteRequest("table",
+                    new WriteRequest()), null);
 
             assertEquals(0, testDynamoDBSink.getAvailablePermits());
             assertEquals(1, testDynamoDBSink.getAcquiredPermits());
@@ -202,84 +123,47 @@ public class DynamoDBSinkTest {
         }
     }
 
-    @Test
-    void testReleaseOnThrowingSend() throws Exception {
-        final DynamoDBSinkBaseConfig config = DynamoDBSinkBaseConfig.builder()
-                .maxConcurrentRequests(1)
-                .build();
-
-        try (TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink(config) {
-            protected ListenableFuture<String> send(String value) {
-                throw new RuntimeException("Error in send");
-            }
-        }) {
-            testDynamoDBSink.open(new Configuration());
-            assertEquals(testDynamoDBSink.getAvailablePermits(), 1);
-            assertEquals(testDynamoDBSink.getAcquiredPermits(), 0);
-
-            assertThrows(RuntimeException.class, () -> {
-                testDynamoDBSink.invoke("N/A", null);
-            });
-            assertEquals(testDynamoDBSink.getAvailablePermits(), 1);
-            assertEquals(testDynamoDBSink.getAcquiredPermits(), 0);
-        }
-    }
-
-    @Test
-    void testTimeoutExceptionOnInvoke() throws Exception {
-        final DynamoDBSinkBaseConfig config = DynamoDBSinkBaseConfig.builder()
-                .maxConcurrentRequests(1)
-                .maxConcurrentRequestsTimeout(Duration.ofMillis(1))
-                .build();
-        try (TestDynamoDBSink testDynamoDBSink = createOpenedSink(config)) {
-            SettableFuture<String> settableFuture = SettableFuture.create();
-            testDynamoDBSink.enqueueListenableFuture(settableFuture);
-            testDynamoDBSink.enqueueListenableFuture(settableFuture);
-            testDynamoDBSink.invoke("Invoke1", null);
-
-            assertThrows(TimeoutException.class, () -> {
-                testDynamoDBSink.invoke("Invoke2", null);
-            });
-            settableFuture.set(null);
-        }
-    }
-
     private TestDynamoDBSink createOpenedSink() throws Exception {
         TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink();
         testDynamoDBSink.open(new Configuration());
         return testDynamoDBSink;
     }
 
-    private TestDynamoDBSink createOpenedSink(DynamoDBSinkBaseConfig dynamoDBSinkBaseConfig) throws Exception {
-        TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink(dynamoDBSinkBaseConfig);
+    private TestDynamoDBSink createOpenedSink(DynamoDBSinkConfig dynamoDBSinkConfig) throws Exception {
+        TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink(dynamoDBSinkConfig);
         testDynamoDBSink.open(new Configuration());
         return testDynamoDBSink;
     }
 
-    private TestDynamoDBSink createOpenedSink(DynamoDBSinkBaseConfig dynamoDBSinkBaseConfig,
+    private TestDynamoDBSink createOpenedSink(DynamoDBSinkConfig dynamoDBSinkConfig,
                                               DynamoDBFailureHandler dynamoDBFailureHandler) throws Exception {
-        TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink(dynamoDBSinkBaseConfig, dynamoDBFailureHandler);
+        TestDynamoDBSink testDynamoDBSink = new TestDynamoDBSink(dynamoDBSinkConfig, dynamoDBFailureHandler);
         testDynamoDBSink.open(new Configuration());
         return testDynamoDBSink;
     }
 
     private OneInputStreamOperatorTestHarness<String, Object> createOpenedTestHarness(
             TestDynamoDBSink testDynamoDBSink) throws Exception {
-        final StreamSink<String> testStreamSink = new StreamSink<>(testDynamoDBSink);
+        final StreamSink testStreamSink = new StreamSink(testDynamoDBSink);
         final OneInputStreamOperatorTestHarness<String, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(testStreamSink);
         testHarness.open();
         return testHarness;
     }
 
-    private static class TestDynamoDBSink extends DynamoDBSink<String, String> implements AutoCloseable {
+    private static class TestDynamoDBSink extends DynamoDBSink implements AutoCloseable {
 
-        private final static AmazonDynamoDB amazonDynamoDB;
-        private final static DynamoDBBuilder dynamoDBBuilder;
+        private final static AmazonDynamoDB amazonDynamoDB = Mockito.mock(AmazonDynamoDB.class);
+        private final static DynamoDBWriterBuilder DYNAMO_DB_WRITER_BUILDER;
 
         static {
-            amazonDynamoDB = Mockito.mock(AmazonDynamoDB.class);
-            dynamoDBBuilder = new DynamoDBBuilder() {
+            DYNAMO_DB_WRITER_BUILDER = new DynamoDBWriterBuilder() {
+
+                @Override
+                public DynamoDBWriter getAmazonDynamoDB() {
+                    return new TestDynamoDBWriter(amazonDynamoDB);
+                }
+
                 @Override
                 protected AmazonDynamoDB build(AmazonDynamoDBClientBuilder amazonDynamoDBClientBuilder) {
                     return amazonDynamoDB;
@@ -287,34 +171,48 @@ public class DynamoDBSinkTest {
             };
         }
 
-        private final Queue<ListenableFuture<String>> resultSetFutures = new LinkedList<>();
-
         public TestDynamoDBSink() {
-            this(DynamoDBSinkBaseConfig.builder().build());
+            this(DynamoDBSinkConfig.builder().batchSize(1).build());
         }
 
-        public TestDynamoDBSink(DynamoDBSinkBaseConfig dynamoDBSinkBaseConfig) {
-            this(dynamoDBBuilder, dynamoDBSinkBaseConfig, new NoOpDynamoDBFailureHandler());
+        public TestDynamoDBSink(DynamoDBSinkConfig dynamoDBSinkConfig) {
+            this(DYNAMO_DB_WRITER_BUILDER, dynamoDBSinkConfig, new NoOpDynamoDBFailureHandler());
         }
 
-        public TestDynamoDBSink(DynamoDBSinkBaseConfig dynamoDBSinkBaseConfig, DynamoDBFailureHandler dynamoDBFailureHandler) {
-            this(dynamoDBBuilder, dynamoDBSinkBaseConfig, dynamoDBFailureHandler);
+        public TestDynamoDBSink(DynamoDBSinkConfig dynamoDBSinkConfig, DynamoDBFailureHandler dynamoDBFailureHandler) {
+            this(DYNAMO_DB_WRITER_BUILDER, dynamoDBSinkConfig, dynamoDBFailureHandler);
         }
 
-        public TestDynamoDBSink(DynamoDBBuilder dynamoDBBuilder,
-                                DynamoDBSinkBaseConfig dynamoDBSinkBaseConfig,
+        public TestDynamoDBSink(DynamoDBWriterBuilder dynamoDBWriterBuilder,
+                                DynamoDBSinkConfig dynamoDBSinkConfig,
                                 DynamoDBFailureHandler dynamoDBFailureHandler) {
-            super(dynamoDBBuilder, dynamoDBSinkBaseConfig, dynamoDBFailureHandler);
+            super(dynamoDBWriterBuilder, dynamoDBSinkConfig, dynamoDBFailureHandler);
         }
 
-        @Override
-        protected ListenableFuture<String> send(String value) {
+        void enqueueListenableFuture(ListenableFuture<BatchResponse> listenableFuture) {
+            ((TestDynamoDBWriter) dynamoDBWriter).enqueueListenableFuture(listenableFuture);
+        }
+
+    }
+
+    private static class TestDynamoDBWriter extends DynamoDBWriter {
+
+        private final Queue<ListenableFuture<BatchResponse>> resultSetFutures = new LinkedList<>();
+
+        public TestDynamoDBWriter(AmazonDynamoDB amazonDynamoDB) {
+            super(amazonDynamoDB);
+        }
+
+        public ListenableFuture<BatchResponse> batchWrite(final BatchRequest batchRequest) {
             return resultSetFutures.poll();
         }
 
-        void enqueueListenableFuture(ListenableFuture<String> listenableFuture) {
+        void enqueueListenableFuture(ListenableFuture<BatchResponse> listenableFuture) {
             resultSetFutures.offer(listenableFuture);
         }
+
     }
+
+
 
 }
