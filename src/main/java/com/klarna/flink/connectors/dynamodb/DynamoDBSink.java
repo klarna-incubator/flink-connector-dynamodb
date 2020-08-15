@@ -47,6 +47,9 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
 
     @Override
     public void invoke(DynamoDBWriteRequest value, Context context) throws Exception {
+        if (dynamoDBWriter == null) {
+            throw new RuntimeException("DynamoDB writer is closed");
+        }
         checkAsyncErrors();
         String tableName = value.getTableName();
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
@@ -93,6 +96,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
             try {
                 if (dynamoDBWriter != null) {
                     dynamoDBWriter.close();
+                    dynamoDBWriter = null;
                 }
             } catch (Exception e) {
                 logger.error("Error while closing com.klarna.flink.connectors.dynamodb client.", e);
