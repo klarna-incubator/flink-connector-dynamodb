@@ -5,10 +5,10 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 
 import java.io.Serializable;
 
-public abstract class DynamoDBBuilder implements Serializable {
+public abstract class DynamoDBWriterBuilder implements Serializable {
 
-    public DynamoDBAsyncClient getAmazonDynamoDB() {
-        return new DynamoDBAsyncClient(build(AmazonDynamoDBClientBuilder.standard()));
+    public DynamoDBWriter getAmazonDynamoDB() {
+        return new DynamoDBWriter(build(AmazonDynamoDBClientBuilder.standard()));
     }
 
     protected abstract AmazonDynamoDB build(AmazonDynamoDBClientBuilder amazonDynamoDBClientBuilder);

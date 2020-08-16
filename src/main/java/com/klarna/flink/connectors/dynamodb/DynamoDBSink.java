@@ -1,8 +1,8 @@
 package com.klarna.flink.connectors.dynamodb;
 
+import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
@@ -13,54 +13,64 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
-public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> implements CheckpointedFunction {
+public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> implements CheckpointedFunction {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());
 
-    protected transient DynamoDBAsyncClient client;
+    protected transient DynamoDBWriter dynamoDBWriter;
 
-    private FutureCallback<OUT> callback;
+    private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>();
+    private int currentBatchSize = 0;
+
+    private FutureCallback<BatchResponse> callback;
     private AtomicReference<Throwable> throwable;
     private Semaphore semaphore;
 
-    private DynamoDBSinkBaseConfig config;
-    private final DynamoDBBuilder builder;
+    private DynamoDBSinkConfig config;
+    private final DynamoDBWriterBuilder builder;
     private final DynamoDBFailureHandler failureHandler;
 
-    protected DynamoDBSinkBase(final DynamoDBBuilder builder,
-                               final DynamoDBSinkBaseConfig config,
-                               final DynamoDBFailureHandler failureHandler) {
+    public DynamoDBSink(final DynamoDBWriterBuilder builder,
+                        final DynamoDBSinkConfig config,
+                        final DynamoDBFailureHandler failureHandler) {
         this.builder = builder;
         this.config = config;
         this.failureHandler = failureHandler;
     }
 
     @Override
-    public void invoke(IN value, Context context) throws Exception {
-        checkAsyncErrors();
-        tryAcquire(1);
-        final ListenableFuture<OUT> result;
-        try {
-            result = send(value);
-        } catch (Throwable e) {
-            semaphore.release();
-            throw e;
+    public void invoke(DynamoDBWriteRequest value, Context context) throws Exception {
+        if (dynamoDBWriter == null) {
+            throw new RuntimeException("DynamoDB writer is closed");
         }
-        Futures.addCallback(result, callback);
+        checkAsyncErrors();
+        String tableName = value.getTableName();
+        final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
+                k -> new ArrayList<>());
+        writeRequests.add(value.getWriteRequest());
+        currentBatchSize++;
+        if (currentBatchSize >= config.getBatchSize()) {
+            process();
+        }
     }
-
-    protected abstract ListenableFuture<OUT> send(IN value);
 
     @Override
     public void open(Configuration parameters) throws Exception {
-        callback = new FutureCallback<OUT>() {
+        callback = new FutureCallback<BatchResponse>() {
             @Override
-            public void onSuccess(@Nullable OUT out) {
+            public void onSuccess(@Nullable BatchResponse out) {
+                if (out != null) {
+                    if (!out.isSuccess()) {
+                        throwable.compareAndSet(null, out.getT());
+                    }
+                }
                 semaphore.release();
             }
 
@@ -71,7 +81,7 @@ public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> imp
                 semaphore.release();
             }
         };
-        client = builder.getAmazonDynamoDB();
+        dynamoDBWriter = builder.getAmazonDynamoDB();
         semaphore = new Semaphore(config.getMaxConcurrentRequests());
         throwable = new AtomicReference<>();
     }
@@ -84,8 +94,9 @@ public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> imp
             checkAsyncErrors();
         } finally {
             try {
-                if (client != null) {
-                    client.close();
+                if (dynamoDBWriter != null) {
+                    dynamoDBWriter.close();
+                    dynamoDBWriter = null;
                 }
             } catch (Exception e) {
                 logger.error("Error while closing com.klarna.flink.connectors.dynamodb client.", e);
@@ -105,28 +116,27 @@ public abstract class DynamoDBSinkBase<IN, OUT> extends RichSinkFunction<IN> imp
         checkAsyncErrors();
     }
 
+    private void process() {
+        if (currentBatchSize > 0) {
+            semaphore.tryAcquire(1);
+            final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
+            batchUnderProcess.clear();
+            currentBatchSize = 0;
+            Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
+        }
+    }
+
+    private void flush() throws Exception {
+        while (semaphore.availablePermits() != config.getMaxConcurrentRequests()) {
+            process();
+            checkAsyncErrors();
+        }
+    }
+
     private void checkAsyncErrors() throws Exception {
         final Throwable currentError = throwable.getAndSet(null);
         if (currentError != null) {
             failureHandler.onFailure(currentError);
-        }
-    }
-
-    private void flush() throws InterruptedException, TimeoutException {
-        tryAcquire(config.getMaxConcurrentRequests());
-        semaphore.release(config.getMaxConcurrentRequests());
-    }
-
-    private void tryAcquire(int permits) throws InterruptedException, TimeoutException {
-        if (!semaphore.tryAcquire(permits, config.getMaxConcurrentRequestsTimeout().toMillis(), TimeUnit.MILLISECONDS)) {
-            throw new TimeoutException(
-                    String.format(
-                            "Failed to acquire %d out of %d permits to send value in %s.",
-                            permits,
-                            config.getMaxConcurrentRequests(),
-                            config.getMaxConcurrentRequestsTimeout()
-                    )
-            );
         }
     }
 
