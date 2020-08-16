@@ -120,7 +120,7 @@ public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> impleme
         if (currentBatchSize > 0) {
             semaphore.tryAcquire(1);
             final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
-            batchUnderProcess.clear();
+            batchUnderProcess = new HashMap<>();
             currentBatchSize = 0;
             Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
         }
@@ -131,6 +131,7 @@ public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> impleme
             process();
             checkAsyncErrors();
         }
+        semaphore.release(config.getMaxConcurrentRequests());
     }
 
     private void checkAsyncErrors() throws Exception {
