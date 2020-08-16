@@ -8,12 +8,15 @@
 At Klarna we use streaming applications extensively. Amazon Kinesis Data Analytics with Flink 1.8 is starting to be one of the choices for the development of new streaming analytics applications at Klarna. Unfortunately, Apache Flink does not provide a connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database out of the box at the moment. This project is to solve this gap.
 
 ## Usage example
+
+```java
 import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBBuilder;
 import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBSinkBaseConfig;
 import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBSinkPut;
 import com.klarna.decisionstore.ingestion.common.connector.dynamodb.NoOpDynamoDBFailureHandler;
 
-```java
+...
+
 final DynamoDBBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     @Override
     protected AmazonDynamoDB build(AmazonDynamoDBClientBuilder builder) {
