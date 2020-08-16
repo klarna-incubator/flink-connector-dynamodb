@@ -10,10 +10,10 @@ At Klarna we use streaming applications extensively. Amazon Kinesis Data Analyti
 ## Usage example
 
 ```java
-import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBBuilder;
-import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBSinkBaseConfig;
-import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBSinkPut;
-import com.klarna.decisionstore.ingestion.common.connector.dynamodb.NoOpDynamoDBFailureHandler;
+import com.klarna.flink.connectors.dynamodb.DynamoDBBuilder;
+import com.klarna.flink.connectors.dynamodb.dynamodb.DynamoDBSinkBaseConfig;
+import com.klarna.flink.connectors.dynamodb.dynamodb.DynamoDBSinkPut;
+import com.klarna.flink.connectors.dynamodb.NoOpDynamoDBFailureHandler;
 
 ...
 
