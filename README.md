@@ -1,46 +1,44 @@
 # Project Name
-> Short blurb about what your project does.
+> Java library provides [Apache Flink](https://flink.apache.org/) connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database that can be used with Flink 1.8 runtime version.
 
 [![Build Status][ci-image]][ci-url]
 [![License][license-image]][license-url]
 [![Developed at Klarna][klarna-image]][klarna-url]
 
-
-One to two paragraph statement about your project and what it does.
-
-## First steps
-
-<details>
- <summary>Installation (for Admins)</summary>
-  
-  Currently, new repositories can be created only by a Klarna Open Source community lead. Please reach out to us if you need assistance.
-  
-  1. Create a new repository by clicking ‘Use this template’ button.
-  
-  2. Make sure your newly created repository is private.
-  
-  3. Enable Dependabot alerts in your candidate repo settings under Security & analysis. You need to enable ‘Allow GitHub to perform read-only analysis of this repository’ first.
-</details>
-
-1. Update `README.md` and `CHANGELOG.md`.
-
-2. Optionally, change `.github/CONTRIBUTING.md`.
-
-3. Do *not* edit `LICENSE`, `.github/CODE_OF_CONDUCT.md`, and `.github/SECURITY.md`.
+At Klarna we use streaming applications extensively. Amazon Kinesis Data Analytics with Flink 1.8 is starting to be one of the choices for the development of new streaming analytics applications at Klarna. Unfortunately, Apache Flink does not provide a connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database out of the box at the moment. This project is to solve this gap.
 
 ## Usage example
+import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBBuilder;
+import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBSinkBaseConfig;
+import com.klarna.decisionstore.ingestion.common.connector.dynamodb.DynamoDBSinkPut;
+import com.klarna.decisionstore.ingestion.common.connector.dynamodb.NoOpDynamoDBFailureHandler;
 
-A few motivating and useful examples of how your project can be used. Spice this up with code blocks and potentially more screenshots.
+```java
+final DynamoDBBuilder dynamoDBBuilder = new DynamoDBBuilder() {
+    @Override
+    protected AmazonDynamoDB build(AmazonDynamoDBClientBuilder builder) {
+        return builder.withRegion('eu-west-1').build();
+    }
+};
 
-_For more examples and usage, please refer to the [Docs](TODO)._
+final DynamoDBSinkPut<Map<String, AttributeValue>> dynamoDBSinkPut = new DynamoDBSinkPut<>(
+        dynamoDBBuilder,
+        DynamoDBSinkBaseConfig.builder().maxConcurrentRequests(1000).build(),
+        new NoOpDynamoDBFailureHandler(),
+        new SomeDynamoDBPutMapper(tableName)
+);
+
+env.addSource(createKafkaConsumer())
+        .addSink(dynamoDBSinkPut)
+        .execute();
+```
 
 ## Development setup
 
-Describe how to install all development dependencies and how to run an automated test-suite of some kind. Potentially do this for multiple platforms.
+This project uses [Maven](https://maven.apache.org/) to set up the development environment. The recommended workflow to build and install the library is the following.
 
 ```sh
-make install
-npm test
+mvn clean install
 ```
 
 ## How to contribute
