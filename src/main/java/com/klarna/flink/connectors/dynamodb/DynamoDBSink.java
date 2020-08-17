@@ -131,7 +131,6 @@ public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> impleme
             process();
             checkAsyncErrors();
         }
-        semaphore.release(config.getMaxConcurrentRequests());
     }
 
     private void checkAsyncErrors() throws Exception {
