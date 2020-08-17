@@ -1,4 +1,4 @@
-# Project Name
+# Flink Connector DynamoDB
 > Java library provides [Apache Flink](https://flink.apache.org/) connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database that can be used with Flink 1.8 runtime version.
 
 [![Build Status][ci-image]][ci-url]
@@ -25,10 +25,9 @@ final DynamoDBBuilder dynamoDBBuilder = new DynamoDBBuilder() {
 };
 
 final DynamoDBSinkPut<Map<String, AttributeValue>> dynamoDBSinkPut = new DynamoDBSinkPut<>(
-        dynamoDBBuilder,
-        DynamoDBSinkBaseConfig.builder().maxConcurrentRequests(1000).build(),
-        new NoOpDynamoDBFailureHandler(),
-        new SomeDynamoDBPutMapper(tableName)
+        new DynamoDBWriter(dynamoDBBuilder),
+        DynamoDBSinkBaseConfig.builder().maxConcurrentRequests(20).build(),
+        new NoOpDynamoDBFailureHandler()
 );
 
 env.addSource(createKafkaConsumer())
