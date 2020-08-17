@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicReference;
 
-public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> implements CheckpointedFunction {
+public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> implements CheckpointedFunction {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -120,7 +120,7 @@ public abstract class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest
         if (currentBatchSize > 0) {
             semaphore.tryAcquire(1);
             final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
-            batchUnderProcess.clear();
+            batchUnderProcess = new HashMap<>();
             currentBatchSize = 0;
             Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
         }
