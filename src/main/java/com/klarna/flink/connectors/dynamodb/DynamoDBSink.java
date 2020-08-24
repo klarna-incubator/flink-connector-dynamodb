@@ -1,88 +1,67 @@
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.model.WriteRequest;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
+import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> implements CheckpointedFunction {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());
 
-    protected transient DynamoDBWriter dynamoDBWriter;
+    protected transient DynamoDBBatchProcessor dynamoDBBatchProcessor;
 
-    private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>();
-    private int currentBatchSize = 0;
-
-    private FutureCallback<BatchResponse> callback;
     private AtomicReference<Throwable> throwable;
-    private Semaphore semaphore;
 
-    private DynamoDBSinkConfig config;
-    private final DynamoDBWriterBuilder builder;
     private final DynamoDBFailureHandler failureHandler;
 
-    public DynamoDBSink(final DynamoDBWriterBuilder builder,
-                        final DynamoDBSinkConfig config,
+    private final DynamoDBSinkConfig dynamoDBSinkConfig;
+
+    private final AmazonDynamoDBBuilder amazonDynamoDBBuilder;
+
+    public DynamoDBSink(final AmazonDynamoDBBuilder amazonDynamoDBBuilder,
+                        final DynamoDBSinkConfig dynamoDBSinkConfig,
                         final DynamoDBFailureHandler failureHandler) {
-        this.builder = builder;
-        this.config = config;
+        Preconditions.checkNotNull(amazonDynamoDBBuilder, "amazonDynamoDBBuilder must not be null");
+        Preconditions.checkNotNull(dynamoDBSinkConfig, "DynamoDBSinkConfig must not be null");
+        Preconditions.checkNotNull(failureHandler, "FailureHandler must not be null");
         this.failureHandler = failureHandler;
+        this.dynamoDBSinkConfig = dynamoDBSinkConfig;
+        this.amazonDynamoDBBuilder = amazonDynamoDBBuilder;
+    }
+
+    protected DynamoDBBatchProcessor buildDynamoDBBatchProcessor(AmazonDynamoDBBuilder amazonDynamoDBBuilder,
+                                                                 int maxConcurrentRequests,
+                                                                 int batchSize,
+                                                                 DynamoDBBatchProcessor.Listener listener) {
+        return new DynamoDBBatchProcessor(amazonDynamoDBBuilder,
+                maxConcurrentRequests,
+                batchSize,
+                listener);
     }
 
     @Override
     public void invoke(DynamoDBWriteRequest value, Context context) throws Exception {
-        if (dynamoDBWriter == null) {
-            throw new RuntimeException("DynamoDB writer is closed");
+        if (dynamoDBBatchProcessor == null) {
+            throw new NullPointerException("DynamoDB writer is closed");
         }
         checkAsyncErrors();
-        String tableName = value.getTableName();
-        final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
-                k -> new ArrayList<>());
-        writeRequests.add(value.getWriteRequest());
-        currentBatchSize++;
-        if (currentBatchSize >= config.getBatchSize()) {
-            process();
-        }
+        dynamoDBBatchProcessor.add(value);
     }
 
     @Override
     public void open(Configuration parameters) throws Exception {
-        callback = new FutureCallback<BatchResponse>() {
-            @Override
-            public void onSuccess(@Nullable BatchResponse out) {
-                if (out != null) {
-                    if (!out.isSuccess()) {
-                        throwable.compareAndSet(null, out.getT());
-                    }
-                }
-                semaphore.release();
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                throwable.compareAndSet(null, t);
-                logger.error("Error while sending value.", t);
-                semaphore.release();
-            }
-        };
-        dynamoDBWriter = builder.getAmazonDynamoDB();
-        semaphore = new Semaphore(config.getMaxConcurrentRequests());
+        this.dynamoDBBatchProcessor = buildDynamoDBBatchProcessor(amazonDynamoDBBuilder,
+                dynamoDBSinkConfig.getMaxConcurrentRequests(),
+                dynamoDBSinkConfig.getBatchSize(),
+                new DynamoDBBatchProcessorListener());
+        dynamoDBBatchProcessor.open();
         throwable = new AtomicReference<>();
     }
 
@@ -94,9 +73,9 @@ public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> impleme
             checkAsyncErrors();
         } finally {
             try {
-                if (dynamoDBWriter != null) {
-                    dynamoDBWriter.close();
-                    dynamoDBWriter = null;
+                if (dynamoDBBatchProcessor != null) {
+                    dynamoDBBatchProcessor.close();
+                    dynamoDBBatchProcessor = null;
                 }
             } catch (Exception e) {
                 logger.error("Error while closing com.klarna.flink.connectors.dynamodb client.", e);
@@ -116,19 +95,9 @@ public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> impleme
         checkAsyncErrors();
     }
 
-    private void process() {
-        if (currentBatchSize > 0) {
-            semaphore.tryAcquire(1);
-            final BatchRequest batchRequest = new BatchRequest(batchUnderProcess);
-            batchUnderProcess = new HashMap<>();
-            currentBatchSize = 0;
-            Futures.addCallback(dynamoDBWriter.batchWrite(batchRequest), callback);
-        }
-    }
-
     private void flush() throws Exception {
-        while (semaphore.availablePermits() != config.getMaxConcurrentRequests()) {
-            process();
+        while (dynamoDBBatchProcessor.getOutBatches() > 0) {
+            dynamoDBBatchProcessor.flush();
             checkAsyncErrors();
         }
     }
@@ -140,14 +109,18 @@ public class DynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> impleme
         }
     }
 
-    @VisibleForTesting
-    int getAvailablePermits() {
-        return semaphore.availablePermits();
-    }
+    private class DynamoDBBatchProcessorListener implements DynamoDBBatchProcessor.Listener {
+        @Override
+        public void onSuccess(BatchResponse batchResponse) {
+            if (batchResponse != null && batchResponse.getT() != null) {
+                throwable.compareAndSet(null, batchResponse.getT());
+            }
+        }
 
-    @VisibleForTesting
-    int getAcquiredPermits() {
-        return config.getMaxConcurrentRequests() - semaphore.availablePermits();
+        @Override
+        public void onFailure(Throwable t) {
+            throwable.compareAndSet(null, t);
+        }
     }
 
 }
