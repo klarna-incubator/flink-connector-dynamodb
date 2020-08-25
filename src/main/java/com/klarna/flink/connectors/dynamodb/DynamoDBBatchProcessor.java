@@ -74,7 +74,7 @@ public class DynamoDBBatchProcessor implements Serializable {
 
     private final int batchSize;
 
-    private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>();
+    private Map<String, List<WriteRequest>> batchUnderProcess = new HashMap<>(25);
 
     private int numberOfRecords = 0;
 
@@ -148,7 +148,7 @@ public class DynamoDBBatchProcessor implements Serializable {
     private void promote() {
         queue.offer(new BatchRequest(batchUnderProcess));
         outBatches.incrementAndGet();
-        batchUnderProcess = new HashMap<>();
+        batchUnderProcess = new HashMap<>(25);
         numberOfRecords = 0;
     }
 
