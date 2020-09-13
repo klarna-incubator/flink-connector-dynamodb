@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.klarna.flink.connectors.dynamodb;
 
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
@@ -15,7 +33,6 @@ import org.apache.flink.util.Preconditions;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -27,25 +44,24 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
-public class DynamoDBBatchProcessor implements Serializable {
+public class DynamoDBBatchProcessor {
 
     /**
      * Listener for batch insert operation
      */
+
     public interface Listener {
 
         /**
-         *
-         * @param batchResponse
+         * invoke on successful batch insert
+         * @param batchResponse the response from the batch insert
          */
         void onSuccess(BatchResponse batchResponse);
 
         /**
-         *
-         * @param t
+         * invoked on failed batch insert
+         * @param t the exception thrown by the batch insert
          */
         void onFailure(Throwable t);
     }
@@ -60,9 +76,7 @@ public class DynamoDBBatchProcessor implements Serializable {
 
     private Semaphore semaphore;
 
-    private AtomicInteger outBatches;
-
-    private AtomicBoolean closed = new AtomicBoolean(false);
+    private transient volatile boolean closed = false;
 
     private Listener listener;
 
@@ -96,29 +110,26 @@ public class DynamoDBBatchProcessor implements Serializable {
     }
 
     public void open() {
-        if (closed.get()) {
+        if (closed) {
             throw new RuntimeException("Writer is closed");
         }
         this.amazonDynamoDB = amazonDynamoDBBuilder.build();
         this.semaphore = new Semaphore(maxConcurrentRequests);
-        outBatches = new AtomicInteger(0);
         callback = new FutureCallback<BatchResponse>() {
             @Override
             public void onSuccess(@Nullable BatchResponse out) {
                 listener.onSuccess(out);
-                outBatches.decrementAndGet();
                 semaphore.release();
             }
 
             @Override
             public void onFailure(Throwable t) {
                 listener.onFailure(t);
-                outBatches.decrementAndGet();
                 semaphore.release();
             }
         };
         executorService.execute(() -> {
-            while (!closed.get()) {
+            while (!closed) {
                 try {
                     BatchRequest batchRequest = queue.take();
                     try {
@@ -147,8 +158,7 @@ public class DynamoDBBatchProcessor implements Serializable {
     }
 
     private void promote() {
-        queue.offer(new BatchRequest(batchUnderProcess));
-        outBatches.incrementAndGet();
+        queue.offer(new BatchRequest(batchUnderProcess, numberOfRecords));
         batchUnderProcess = new HashMap<>(batchSize);
         numberOfRecords = 0;
     }
@@ -157,10 +167,6 @@ public class DynamoDBBatchProcessor implements Serializable {
         if (numberOfRecords > 0) {
             promote();
         }
-    }
-
-    public int getOutBatches() {
-        return outBatches.get();
     }
 
     protected ListenableFuture<BatchResponse> batchWrite(final BatchRequest batchRequest) {
@@ -180,7 +186,6 @@ public class DynamoDBBatchProcessor implements Serializable {
                     } else {
                         retry = false;
                     }
-
                 } catch (ResourceNotFoundException e) {
                     throw new IOException("Resource not found while inserting to dynamodb. do not retry", e);
                 } catch (Exception e) {
@@ -204,16 +209,17 @@ public class DynamoDBBatchProcessor implements Serializable {
             if (retry && t != null) {
                 throw new IOException("Error in batch insert after retries");
             }
-            return new BatchResponse(true, null);
+            return BatchResponse.success(batchRequest.getBatchSize());
         });
 
     }
 
     public void close() {
+        closed = true;
         if (amazonDynamoDB != null) {
             amazonDynamoDB.shutdown();
         }
-        closed.set(true);
+        executorService.shutdown();
     }
 
     @VisibleForTesting

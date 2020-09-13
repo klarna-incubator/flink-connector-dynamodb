@@ -1,29 +1,46 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.klarna.flink.connectors.dynamodb;
 
 public class BatchResponse {
 
-    private boolean success;
+    private final int batchSize;
+    private final Throwable t;
 
-    private Throwable t;
-
-    public BatchResponse(boolean success, Throwable t) {
-        this.success = success;
+    private BatchResponse(int batchSize, Throwable t) {
+        this.batchSize = batchSize;
         this.t = t;
     }
 
-    public boolean isSuccess() {
-        return success;
+    public static BatchResponse success(int batchSize) {
+        return new BatchResponse(batchSize, null);
     }
 
-    public void setSuccess(boolean success) {
-        this.success = success;
+    public static BatchResponse fail(Throwable t) {
+        return new BatchResponse(0, t);
     }
 
     public Throwable getT() {
         return t;
     }
 
-    public void setT(Throwable t) {
-        this.t = t;
+    public int getBatchSize() {
+        return batchSize;
     }
 }
