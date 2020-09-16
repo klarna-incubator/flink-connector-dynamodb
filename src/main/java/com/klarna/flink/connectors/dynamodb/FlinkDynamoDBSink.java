@@ -58,6 +58,7 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     /** Builder for Amazon Dynamo DB*/
     private final AmazonDynamoDBBuilder amazonDynamoDBBuilder;
 
+    /** number of pending records */
     private final AtomicLong numPendingRecords = new AtomicLong(0);
 
     /**
@@ -80,7 +81,7 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     @Override
     public void invoke(DynamoDBWriteRequest value, Context context) throws Exception {
         if (dynamoDBBatchProcessor == null) {
-            throw new NullPointerException("DynamoDB writer is closed");
+            throw new NullPointerException("DynamoDB batch processor is closed");
         }
         checkAsyncErrors();
         numPendingRecords.incrementAndGet();
@@ -123,6 +124,10 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
         checkAsyncErrors();
     }
 
+    /**
+     * When numPendingRecords equals 0, it means all batch inserts completed successfully
+     * @throws Exception propagated exception from {@link FlinkDynamoDBSink#checkAsyncErrors()}
+     */
     private void flush() throws Exception {
         while (numPendingRecords.get() > 0) {
             dynamoDBBatchProcessor.flush();
@@ -130,6 +135,10 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
         }
     }
 
+    /**
+     *
+     * @throws Exception propagated exception from failureHandler
+     */
     private void checkAsyncErrors() throws Exception {
         final Throwable currentError = throwable.getAndSet(null);
         if (currentError != null) {

@@ -23,7 +23,7 @@ import org.apache.flink.annotation.Internal;
 import java.io.IOException;
 
 /**
- * Default implementation for failure handler
+ * A {@link DynamoDBFailureHandler} that simply fails the sink on any failures.
  */
 @Internal
 public class NoOpDynamoDBFailureHandler implements DynamoDBFailureHandler {

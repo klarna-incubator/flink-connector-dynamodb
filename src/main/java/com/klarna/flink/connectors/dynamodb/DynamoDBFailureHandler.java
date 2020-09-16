@@ -23,7 +23,17 @@ import org.apache.flink.annotation.PublicEvolving;
 import java.io.IOException;
 import java.io.Serializable;
 
+/**
+ * An implementation of {@link DynamoDBFailureHandler} is provided by the user to define how
+ * {@link Throwable Throwable} should be handled
+ */
 @PublicEvolving
 public interface DynamoDBFailureHandler extends Serializable {
+    /**
+     * Handle a failed {@link Throwable}.
+     *
+     * @param t the cause of failure
+     * @throws IOException if the sink should fail on this failure, the implementation should rethrow the throwable or a custom one
+     */
     void onFailure(Throwable t) throws IOException;
 }

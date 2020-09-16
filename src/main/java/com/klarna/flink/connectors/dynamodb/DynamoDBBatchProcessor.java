@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.util.Preconditions;
 
@@ -37,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -45,10 +47,18 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * This class is used to send batch requests to DynamoDB
+ * records are added to the batch processor by calling the add method. The processor then promotes a batch size by inserting it into a queue.
+ * A background thread is polling the records
+ *
+ * This class is synchronized. It is recommended to create separate format instances for each thread. Concurrent access to this class from multiple threads must be synchronized externally.
+ */
+@Internal
 public class DynamoDBBatchProcessor {
 
     /**
-     * Listener for batch insert operation
+     * Listener for batch insert operation. allows fot additional logic to be executed on batch request success/failure
      */
 
     public interface Listener {
@@ -72,27 +82,37 @@ public class DynamoDBBatchProcessor {
 
     private final ListeningExecutorService listeningExecutorService;
 
+    /** executor service invoking the batch requests to DynamoDB */
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
+    /** a semaphore to permit only allowed number of concurrent requests to be executed */
     private Semaphore semaphore;
 
+    /** is the processor closed */
     private transient volatile boolean closed = false;
 
+    /** a listener to invoke in the future callback */
     private Listener listener;
 
+    /** a callback to invoke on a completed future */
     private FutureCallback<BatchResponse> callback;
 
     private final AmazonDynamoDBBuilder amazonDynamoDBBuilder;
 
+    /** max number of concurrent requests that are permitted */
     private final int maxConcurrentRequests;
 
+    /** the batch size for the batch request */
     private final int batchSize;
 
+    /** accumulated records for the next batch */
     private Map<String, List<WriteRequest>> batchUnderProcess;
 
+    /** the size of the next batch */
     private int numberOfRecords = 0;
 
-    private final LinkedBlockingQueue<BatchRequest> queue = new LinkedBlockingQueue<>();
+    /** A queue for the requests. This queue is blocking. */
+    private final BlockingQueue<BatchRequest> queue = new LinkedBlockingQueue<>();
 
     public DynamoDBBatchProcessor(final AmazonDynamoDBBuilder amazonDynamoDBBuilder,
                                   final int maxConcurrentRequests,
@@ -118,14 +138,14 @@ public class DynamoDBBatchProcessor {
         callback = new FutureCallback<BatchResponse>() {
             @Override
             public void onSuccess(@Nullable BatchResponse out) {
-                listener.onSuccess(out);
                 semaphore.release();
+                listener.onSuccess(out);
             }
 
             @Override
             public void onFailure(Throwable t) {
-                listener.onFailure(t);
                 semaphore.release();
+                listener.onFailure(t);
             }
         };
         executorService.execute(() -> {
@@ -146,6 +166,10 @@ public class DynamoDBBatchProcessor {
         });
     }
 
+    /**
+     * add a DynamoDB request. accumulate the requests until batchSize, then promote to the queue
+     * @param dynamoDBWriteRequest a single write request to DynamoDB
+     */
     public void add(final DynamoDBWriteRequest dynamoDBWriteRequest) {
         numberOfRecords++;
         String tableName = dynamoDBWriteRequest.getTableName();
@@ -153,22 +177,26 @@ public class DynamoDBBatchProcessor {
                 k -> new ArrayList<>());
         writeRequests.add(dynamoDBWriteRequest.getWriteRequest());
         if (numberOfRecords >= batchSize) {
-            promote();
+            promoteBatch();
         }
     }
 
-    private void promote() {
+    private void promoteBatch() {
         queue.offer(new BatchRequest(batchUnderProcess, numberOfRecords));
         batchUnderProcess = new HashMap<>(batchSize);
         numberOfRecords = 0;
     }
 
+    /**
+     * If there are records that are not added, promote them
+     */
     public void flush() {
         if (numberOfRecords > 0) {
-            promote();
+            promoteBatch();
         }
     }
 
+    // currently protected to allow overriding for testing. should be extracted from this class.
     protected ListenableFuture<BatchResponse> batchWrite(final BatchRequest batchRequest) {
         return listeningExecutorService.submit(() -> {
             final BatchWriteItemRequest batchWriteItemRequest = new BatchWriteItemRequest();
@@ -215,6 +243,9 @@ public class DynamoDBBatchProcessor {
     }
 
     public void close() {
+        if (closed) {
+            return;
+        }
         closed = true;
         if (amazonDynamoDB != null) {
             amazonDynamoDB.shutdown();
@@ -225,6 +256,11 @@ public class DynamoDBBatchProcessor {
     @VisibleForTesting
     int getAvailablePermits() {
         return semaphore.availablePermits();
+    }
+
+    @VisibleForTesting
+    BlockingQueue<BatchRequest> getQueue() {
+        return queue;
     }
 
 }

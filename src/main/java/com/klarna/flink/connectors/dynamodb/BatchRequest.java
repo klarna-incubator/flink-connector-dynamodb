@@ -23,9 +23,6 @@ import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import java.util.List;
 import java.util.Map;
 
-/**
- *
- */
 public class BatchRequest {
 
     private final Map<String, List<WriteRequest>> batch;
