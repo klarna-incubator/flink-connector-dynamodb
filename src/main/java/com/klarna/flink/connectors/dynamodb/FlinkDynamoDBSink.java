@@ -163,8 +163,16 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
                 listener);
     }
 
+    /**
+     * Implementation for {@link DynamoDBBatchProcessor.Listener}
+     */
     private class DynamoDBBatchProcessorListener implements DynamoDBBatchProcessor.Listener {
 
+        /**
+         * on success reduce numPendingRequests by batchSize
+         * if the operattion was not successful, set throwable with the thrown exception
+         * @param batchResponse the response from the batch insert
+         */
         @Override
         public void onSuccess(BatchResponse batchResponse) {
             if (batchResponse != null) {
@@ -176,6 +184,10 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
             }
         }
 
+        /**
+         * on error, set throwable with the thrown exception
+         * @param t the exception thrown by the batch insert
+         */
         @Override
         public void onFailure(Throwable t) {
             throwable.compareAndSet(null, t);

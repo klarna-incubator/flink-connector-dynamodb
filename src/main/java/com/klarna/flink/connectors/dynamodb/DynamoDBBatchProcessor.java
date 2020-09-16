@@ -49,8 +49,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * This class is used to send batch requests to DynamoDB
- * records are added to the batch processor by calling the add method. The processor then promotes a batch size by inserting it into a queue.
- * A background thread is polling the records
+ * records are added to the batch processor by calling the add method. The processor accumulates and promotes a batch by inserting it into a queue.
+ * A background thread is polling the queue and try to acquire a permit to execute the batch request.
  *
  * This class is synchronized. It is recommended to create separate format instances for each thread. Concurrent access to this class from multiple threads must be synchronized externally.
  */
