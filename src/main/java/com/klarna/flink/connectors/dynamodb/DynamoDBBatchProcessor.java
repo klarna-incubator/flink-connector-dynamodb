@@ -52,7 +52,8 @@ import java.util.concurrent.TimeUnit;
  * records are added to the batch processor by calling the add method. The processor accumulates and promotes a batch by inserting it into a queue.
  * A background thread is polling the queue and try to acquire a permit to execute the batch request.
  *
- * This class is synchronized. It is recommended to create separate format instances for each thread. Concurrent access to this class from multiple threads must be synchronized externally.
+ * This class is not synchronized. It is recommended to create separate format instances for each thread.
+ * Concurrent access to this class from multiple threads must be synchronized externally.
  */
 @Internal
 public class DynamoDBBatchProcessor {

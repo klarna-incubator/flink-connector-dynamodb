@@ -17,21 +17,25 @@ import com.klarna.flink.connectors.dynamodb.NoOpDynamoDBFailureHandler;
 
 ...
 
-final DynamoDBBuilder dynamoDBBuilder = new DynamoDBBuilder() {
+final AmazonDynamoDBBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     @Override
-    protected AmazonDynamoDB build(AmazonDynamoDBClientBuilder builder) {
-        return builder.withRegion('eu-west-1').build();
+    public AmazonDynamoDB build() {
+        return AmazonDynamoDBClientBuilder.standard().withRegion('eu-west-1').build();
     }
 };
 
-final DynamoDBSinkPut<Map<String, AttributeValue>> dynamoDBSinkPut = new DynamoDBSinkPut<>(
-        new DynamoDBWriter(dynamoDBBuilder),
-        DynamoDBSinkBaseConfig.builder().maxConcurrentRequests(20).build(),
+final DynamoDBSinkConfig dynamoDBSinkConfig = DynamoDBSinkBaseConfig.builder()
+    .maxConcurrentRequests(20)
+    .build();
+
+final FlinkDynamoDBSink dynamoDbSink = new FlinkDynamoDBSink<>(
+        dynamoDBBuilder,
+        dynamoDBSinkConfig,
         new NoOpDynamoDBFailureHandler()
 );
 
 env.addSource(createKafkaConsumer())
-        .addSink(dynamoDBSinkPut)
+        .addSink(dynamoDbSink)
         .execute();
 ```
 
