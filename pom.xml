@@ -7,10 +7,25 @@
     <groupId>com.klarna</groupId>
     <version>1.0</version>
 
+    <name>Flink DynamoDB Sink</name>
+    <organization>
+        <name>klarna</name>
+    </organization>
+    <developers>
+        <developer>
+            <id>nir.tsruya</id>
+            <name>Nir Tsruya</name>
+            <organization>klarna</organization>
+            <roles>
+                <role>developer</role>
+            </roles>
+            <timezone>Europe/Stockholm</timezone>
+        </developer>
+    </developers>
+
     <artifactId>flink-connector-dynamodb</artifactId>
 
     <properties>
-        <revision>dev</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>1.8</java.version>
         <aws.sdk.version>1.11.751</aws.sdk.version>
@@ -101,43 +116,10 @@
             <classifier>tests</classifier>
         </dependency>
         <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <version>${junit.jupiter.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
-            <version>${junit.jupiter.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>${mockito.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-junit-jupiter</artifactId>
-            <version>${mockito.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.amazonaws</groupId>
-            <artifactId>DynamoDBLocal</artifactId>
-            <version>1.12.0</version>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <repositories>
-        <repository>
-            <id>dynamodb-local-oregon</id>
-            <name>DynamoDB Local Release Repository</name>
-            <url>https://s3-us-west-2.amazonaws.com/dynamodb-local/release</url>
-        </repository>
-    </repositories>
-
 </project>

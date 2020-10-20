@@ -18,27 +18,22 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.model.WriteRequest;
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 
-import java.util.List;
-import java.util.Map;
+import java.io.Serializable;
 
-public class BatchRequest {
+/**
+ * This class is used to configure a {@link com.amazonaws.services.dynamodbv2.AmazonDynamoDB} after deployment.
+ * The AmazonDynamoDB represents the connection that will be established to DynamoDB.
+ */
+public interface AmazonDynamoDBBuilder extends Serializable {
 
-    private final Map<String, List<WriteRequest>> batch;
-    private final int batchSize;
-
-    public BatchRequest(final Map<String, List<WriteRequest>> batch, int batchSize) {
-        this.batch = batch;
-        this.batchSize = batchSize;
-    }
-
-    public Map<String, List<WriteRequest>> getBatch() {
-        return batch;
-    }
-
-    public int getBatchSize() {
-        return batchSize;
-    }
-
+    /**
+     * Configures the connection to DynamoDB.
+     * The configuration is done by calling methods on the builder object
+     * and finalizing the configuration with build().
+     *
+     * @return configured connection
+     */
+    AmazonDynamoDB build();
 }
