@@ -11,6 +11,7 @@
 
     <properties>
         <revision>dev</revision>
+        <github.global.server>github</github.global.server>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>1.8</java.version>
         <aws.sdk.version>1.11.751</aws.sdk.version>
@@ -20,6 +21,14 @@
         <guava.version>18.0</guava.version>
         <mockito.version>3.1.0</mockito.version>
     </properties>
+
+    <distributionManagement>
+        <repository>
+        <id>github</id>
+        <name>GitHub klarna-incubator Apache Maven Packages</name>
+        <url>https://maven.pkg.github.com/klarna-incubator/flink-connector-dynamodb</url>
+        </repository>
+    </distributionManagement>
 
     <build>
         <plugins>
