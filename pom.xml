@@ -28,7 +28,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>1.8</java.version>
-        <aws.sdk.version>1.11.751</aws.sdk.version>
+        <aws.sdk.version>1.11.933</aws.sdk.version>
         <scala.binary.version>2.12</scala.binary.version>
         <flink.version>1.8.2</flink.version>
         <junit.jupiter.version>5.6.2</junit.jupiter.version>
