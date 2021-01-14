@@ -1,11 +1,11 @@
 # Flink Connector DynamoDB
-> Java library provides [Apache Flink](https://flink.apache.org/) connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database that can be used with Flink 1.8 runtime version.
+> Java library provides [Apache Flink](https://flink.apache.org/) connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database that can be used with Flink 1.11.3 runtime version.
 
 [![Build Status][ci-image]][ci-url]
 [![License][license-image]][license-url]
 [![Developed at Klarna][klarna-image]][klarna-url]
 
-At Klarna we use streaming applications extensively. Amazon Kinesis Data Analytics with Flink 1.8 is starting to be one of the choices for the development of new streaming analytics applications at Klarna. Unfortunately, Apache Flink does not provide a connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database out of the box at the moment. This project is to solve this gap.
+At Klarna we use streaming applications extensively. Amazon Kinesis Data Analytics with Flink 1.11.3 is starting to be one of the choices for the development of new streaming analytics applications at Klarna. Unfortunately, Apache Flink does not provide a connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database out of the box at the moment. This project is to solve this gap.
 
 ## Usage example
 
