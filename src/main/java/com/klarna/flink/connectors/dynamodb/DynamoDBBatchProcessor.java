@@ -193,7 +193,7 @@ public class DynamoDBBatchProcessor {
     // currently protected to allow overriding for testing. should be extracted from this class.
     protected ListenableFuture<BatchResponse> batchWrite(final BatchRequest batchRequest) {
         return listeningExecutorService.submit(() -> {
-            final BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder()
+            BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder()
                     .requestItems(batchRequest.getBatch())
                     .build();
             boolean retry = false;
@@ -205,7 +205,9 @@ public class DynamoDBBatchProcessor {
                     final BatchWriteItemResponse batchWriteItemResponse = dynamoDbClient.batchWriteItem(batchWriteItemRequest);
                     if (batchWriteItemResponse.hasUnprocessedItems()) {
                         retry = true;
-                        batchWriteItemRequest.toBuilder().requestItems(batchWriteItemResponse.unprocessedItems());
+                        batchWriteItemRequest = batchWriteItemRequest.toBuilder()
+                                .requestItems(batchWriteItemResponse.unprocessedItems())
+                                .build();
                     } else {
                         retry = false;
                     }
