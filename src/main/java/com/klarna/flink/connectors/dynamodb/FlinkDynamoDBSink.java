@@ -56,26 +56,26 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     private final DynamoDBSinkConfig dynamoDBSinkConfig;
 
     /** Builder for Amazon Dynamo DB*/
-    private final AmazonDynamoDBBuilder amazonDynamoDBBuilder;
+    private final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder;
 
     /** number of pending records */
     private final AtomicLong numPendingRecords = new AtomicLong(0);
 
     /**
      * Constructor of FlinkDynamoDBSink
-     * @param amazonDynamoDBBuilder builder for dynamo db client
+     * @param flinkDynamoDBClientBuilder builder for dynamo db client
      * @param dynamoDBSinkConfig configuration for dynamo db sink
      * @param failureHandler failure handler
      */
-    public FlinkDynamoDBSink(final AmazonDynamoDBBuilder amazonDynamoDBBuilder,
+    public FlinkDynamoDBSink(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                              final DynamoDBSinkConfig dynamoDBSinkConfig,
                              final DynamoDBFailureHandler failureHandler) {
-        Preconditions.checkNotNull(amazonDynamoDBBuilder, "amazonDynamoDBBuilder must not be null");
+        Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "amazonDynamoDBBuilder must not be null");
         Preconditions.checkNotNull(dynamoDBSinkConfig, "DynamoDBSinkConfig must not be null");
         Preconditions.checkNotNull(failureHandler, "FailureHandler must not be null");
         this.failureHandler = failureHandler;
         this.dynamoDBSinkConfig = dynamoDBSinkConfig;
-        this.amazonDynamoDBBuilder = amazonDynamoDBBuilder;
+        this.flinkDynamoDBClientBuilder = flinkDynamoDBClientBuilder;
     }
 
     @Override
@@ -89,7 +89,7 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     }
 
     @Override
-    public void open(Configuration parameters) throws Exception {
+    public void open(Configuration parameters) {
         this.dynamoDBBatchProcessor = buildDynamoDBBatchProcessor(new DynamoDBBatchProcessorListener());
         dynamoDBBatchProcessor.open();
     }
@@ -157,7 +157,7 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
      */
     @VisibleForTesting
     protected DynamoDBBatchProcessor buildDynamoDBBatchProcessor(DynamoDBBatchProcessor.Listener listener) {
-        return new DynamoDBBatchProcessor(amazonDynamoDBBuilder,
+        return new DynamoDBBatchProcessor(flinkDynamoDBClientBuilder,
                 dynamoDBSinkConfig.getMaxConcurrentRequests(),
                 dynamoDBSinkConfig.getBatchSize(),
                 listener);
@@ -170,7 +170,7 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
 
         /**
          * on success reduce numPendingRequests by batchSize
-         * if the operattion was not successful, set throwable with the thrown exception
+         * if the operation was not successful, set throwable with the thrown exception
          * @param batchResponse the response from the batch insert
          */
         @Override

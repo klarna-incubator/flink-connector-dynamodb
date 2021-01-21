@@ -18,11 +18,6 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.model.BatchWriteItemRequest;
-import com.amazonaws.services.dynamodbv2.model.BatchWriteItemResult;
-import com.amazonaws.services.dynamodbv2.model.ResourceNotFoundException;
-import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -31,6 +26,11 @@ import com.google.common.util.concurrent.MoreExecutors;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.util.Preconditions;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -38,14 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * This class is used to send batch requests to DynamoDB
@@ -77,7 +70,7 @@ public class DynamoDBBatchProcessor {
         void onFailure(Throwable t);
     }
 
-    private AmazonDynamoDB amazonDynamoDB;
+    private DynamoDbClient dynamoDbClient;
 
     private static final int corePoolSize = Runtime.getRuntime().availableProcessors() * (1 + 40/2);
 
@@ -98,7 +91,7 @@ public class DynamoDBBatchProcessor {
     /** a callback to invoke on a completed future */
     private FutureCallback<BatchResponse> callback;
 
-    private final AmazonDynamoDBBuilder amazonDynamoDBBuilder;
+    private final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder;
 
     /** max number of concurrent requests that are permitted */
     private final int maxConcurrentRequests;
@@ -115,12 +108,12 @@ public class DynamoDBBatchProcessor {
     /** A queue for the requests. This queue is blocking. */
     private final BlockingQueue<BatchRequest> queue = new LinkedBlockingQueue<>();
 
-    public DynamoDBBatchProcessor(final AmazonDynamoDBBuilder amazonDynamoDBBuilder,
+    public DynamoDBBatchProcessor(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                                   final int maxConcurrentRequests,
                                   final int batchSize,
                                   final DynamoDBBatchProcessor.Listener listener) {
-        Preconditions.checkNotNull(amazonDynamoDBBuilder, "amazonDynamoDBWBuilder must not be null");
-        this.amazonDynamoDBBuilder = amazonDynamoDBBuilder;
+        Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "amazonDynamoDBWBuilder must not be null");
+        this.flinkDynamoDBClientBuilder = flinkDynamoDBClientBuilder;
         final ThreadPoolExecutor threadPoolExecutor =
                 new ThreadPoolExecutor(corePoolSize, corePoolSize, 1000, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
         listeningExecutorService = MoreExecutors.listeningDecorator(threadPoolExecutor);
@@ -134,7 +127,7 @@ public class DynamoDBBatchProcessor {
         if (closed) {
             throw new RuntimeException("Writer is closed");
         }
-        this.amazonDynamoDB = amazonDynamoDBBuilder.build();
+        this.dynamoDbClient = flinkDynamoDBClientBuilder.build();
         this.semaphore = new Semaphore(maxConcurrentRequests);
         callback = new FutureCallback<BatchResponse>() {
             @Override
@@ -159,7 +152,7 @@ public class DynamoDBBatchProcessor {
                         semaphore.release();
                         Thread.currentThread().interrupt();
                     }
-                    Futures.addCallback(batchWrite(batchRequest), callback);
+                    Futures.addCallback(batchWrite(batchRequest), callback, MoreExecutors.directExecutor());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -200,18 +193,19 @@ public class DynamoDBBatchProcessor {
     // currently protected to allow overriding for testing. should be extracted from this class.
     protected ListenableFuture<BatchResponse> batchWrite(final BatchRequest batchRequest) {
         return listeningExecutorService.submit(() -> {
-            final BatchWriteItemRequest batchWriteItemRequest = new BatchWriteItemRequest();
-            batchWriteItemRequest.withRequestItems(batchRequest.getBatch());
+            final BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder()
+                    .requestItems(batchRequest.getBatch())
+                    .build();
             boolean retry = false;
             int retries = 0;
             Throwable t = null;
             while (!retry && retries < 3) {
                 t = null;
                 try {
-                    final BatchWriteItemResult batchWriteItemResult = amazonDynamoDB.batchWriteItem(batchWriteItemRequest);
-                    if (!batchWriteItemResult.getUnprocessedItems().isEmpty()) {
+                    final BatchWriteItemResponse batchWriteItemResponse = dynamoDbClient.batchWriteItem(batchWriteItemRequest);
+                    if (batchWriteItemResponse.hasUnprocessedItems()) {
                         retry = true;
-                        batchWriteItemRequest.withRequestItems(batchWriteItemResult.getUnprocessedItems());
+                        batchWriteItemRequest.toBuilder().requestItems(batchWriteItemResponse.unprocessedItems());
                     } else {
                         retry = false;
                     }
@@ -248,8 +242,8 @@ public class DynamoDBBatchProcessor {
             return;
         }
         closed = true;
-        if (amazonDynamoDB != null) {
-            amazonDynamoDB.shutdown();
+        if (dynamoDbClient != null) {
+            dynamoDbClient.close();
         }
         executorService.shutdown();
     }

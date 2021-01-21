@@ -1,13 +1,13 @@
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import org.apache.flink.core.testutils.MultiShotLatch;
 import org.junit.Assert;
 import org.junit.Test;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.util.LinkedList;
 import java.util.Queue;
@@ -21,7 +21,7 @@ public class DynamoDBBatchProcessorTest {
         DummyDynamoDBBatchProcessor processor = new DummyDynamoDBBatchProcessor(1, 10, new DummyListener());
         processor.open();
         processor.enqueueBatchResponseFuture(Futures.immediateFuture(BatchResponse.success(1)));
-        processor.add(new DynamoDBWriteRequest("test_table", new WriteRequest()));
+        processor.add(new DynamoDBWriteRequest("test_table", WriteRequest.builder().build()));
         // add should not promote since number of records added is less than batchSize
         Assert.assertEquals(0, processor.getQueue().size());
         processor.flush();
@@ -38,7 +38,7 @@ public class DynamoDBBatchProcessorTest {
         DummyDynamoDBBatchProcessor processor = new DummyDynamoDBBatchProcessor(1, 1, new DummyListener());
         processor.open();
         processor.enqueueBatchResponseFuture(settableFuture);
-        processor.add(new DynamoDBWriteRequest("test_table", new WriteRequest()));
+        processor.add(new DynamoDBWriteRequest("test_table", WriteRequest.builder().build()));
         // wait for the batch to be polled from the queue
         while (processor.getAvailablePermits() == 1) {
             Thread.sleep(5);
@@ -54,7 +54,7 @@ public class DynamoDBBatchProcessorTest {
     public void testBatchIsNotPromotedWhenRecordsAddedLessThanBatchSize() {
         DummyDynamoDBBatchProcessor processor = new DummyDynamoDBBatchProcessor(1, 10, new DummyListener());
         processor.open();
-        processor.add(new DynamoDBWriteRequest("test_table", new WriteRequest()));
+        processor.add(new DynamoDBWriteRequest("test_table", WriteRequest.builder().build()));
         Assert.assertEquals(0, processor.getQueue().size());
         Assert.assertEquals(1, processor.getAvailablePermits());
         processor.close();
@@ -66,7 +66,7 @@ public class DynamoDBBatchProcessorTest {
         DummyDynamoDBBatchProcessor processor = new DummyDynamoDBBatchProcessor(1, 1, new DummyListener());
         processor.open();
         processor.enqueueBatchResponseFuture(settableFuture);
-        processor.add(new DynamoDBWriteRequest("test_table", new WriteRequest()));
+        processor.add(new DynamoDBWriteRequest("test_table", WriteRequest.builder().build()));
         // wait for the batch to be polled from the queue
         while (processor.getAvailablePermits() == 1) {
             Thread.sleep(5);
@@ -84,7 +84,7 @@ public class DynamoDBBatchProcessorTest {
         DummyDynamoDBBatchProcessor processor = new DummyDynamoDBBatchProcessor(1, 1, new DummyListener());
         processor.open();
         processor.enqueueBatchResponseFuture(settableFuture);
-        processor.add(new DynamoDBWriteRequest("test_table", new WriteRequest()));
+        processor.add(new DynamoDBWriteRequest("test_table", WriteRequest.builder().build()));
         // wait for the batch to be polled from the queue
         while (processor.getAvailablePermits() == 1) {
             Thread.sleep(5);
@@ -103,7 +103,7 @@ public class DynamoDBBatchProcessorTest {
         public DummyDynamoDBBatchProcessor(int maxConcurrentRequests,
                                            int batchSize,
                                            Listener listener) {
-            super(new DummyAmazonDynamoDBBuilder(), maxConcurrentRequests, batchSize, listener);
+            super(new DummyFlinkDynamoDBClientBuilder(), maxConcurrentRequests, batchSize, listener);
         }
 
         @Override
@@ -117,9 +117,9 @@ public class DynamoDBBatchProcessorTest {
 
     }
 
-    private static class DummyAmazonDynamoDBBuilder implements AmazonDynamoDBBuilder {
+    private static class DummyFlinkDynamoDBClientBuilder implements FlinkDynamoDBClientBuilder {
         @Override
-        public AmazonDynamoDB build() {
+        public DynamoDbClient build() {
             return null;
         }
     }

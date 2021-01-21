@@ -18,8 +18,6 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 import org.apache.flink.core.testutils.CheckedThread;
 import org.apache.flink.core.testutils.MultiShotLatch;
 import org.apache.flink.streaming.api.operators.StreamSink;
@@ -27,6 +25,8 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.junit.Assert;
 import org.junit.Test;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.util.Collections;
 
@@ -35,12 +35,12 @@ public class FlinkDynamoDBSinkTest {
     @Test
     public void testSuccessfullPath() throws Exception {
         final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyAmazonDynamoDBBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
+                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
         final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         Assert.assertEquals(1, sink.getNumPendingRecords());
         sink.setBatchResponse(BatchResponse.success(1));
         sink.manualBatch();
@@ -51,16 +51,16 @@ public class FlinkDynamoDBSinkTest {
     @Test
     public void testFailureThrownOnInvoke() throws Exception {
         final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyAmazonDynamoDBBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
+                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
         final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         sink.setBatchResponse(BatchResponse.fail(new Exception("Test exception")));
         sink.manualBatch();
         try {
-            testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+            testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         } catch (Exception e) {
             Assert.assertTrue(e.getCause().getMessage().contains("Test exception"));
             return;
@@ -71,12 +71,12 @@ public class FlinkDynamoDBSinkTest {
     @Test
     public void testFailureThrownOnCheckpoint() throws Exception {
         final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyAmazonDynamoDBBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
+                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
         final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         sink.setBatchResponse(BatchResponse.fail(new Exception("Test exception")));
 
         sink.manualBatch();
@@ -92,12 +92,12 @@ public class FlinkDynamoDBSinkTest {
     @Test
     public void testFailureThrownOnClose() throws Exception {
         final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyAmazonDynamoDBBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
+                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
         final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         sink.setBatchResponse(BatchResponse.fail(new Exception("Test exception")));
         sink.manualBatch();
         try {
@@ -112,12 +112,12 @@ public class FlinkDynamoDBSinkTest {
     @Test(timeout = 5000)
     public void testFlushOnClose() throws Exception {
         final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyAmazonDynamoDBBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
+                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
         final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         Assert.assertEquals(1, sink.getNumPendingRecords());
         CheckedThread snapshotThread = new CheckedThread() {
             @Override
@@ -136,12 +136,12 @@ public class FlinkDynamoDBSinkTest {
     @Test(timeout = 5000)
     public void testFlushOnSnapshot() throws Exception {
         final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyAmazonDynamoDBBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
+                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
         final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", new WriteRequest())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
         Assert.assertEquals(1, sink.getNumPendingRecords());
         CheckedThread snapshotThread = new CheckedThread() {
             @Override
@@ -165,10 +165,10 @@ public class FlinkDynamoDBSinkTest {
 
         private transient MultiShotLatch flushLatch = new MultiShotLatch();
 
-        public DummyFlinkDynamoDBSink(AmazonDynamoDBBuilder amazonDynamoDBBuilder,
+        public DummyFlinkDynamoDBSink(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                                       DynamoDBSinkConfig dynamoDBSinkConfig,
                                       DynamoDBFailureHandler failureHandler) {
-            super(amazonDynamoDBBuilder, dynamoDBSinkConfig, failureHandler);
+            super(flinkDynamoDBClientBuilder, dynamoDBSinkConfig, failureHandler);
         }
 
         public void setBatchResponse(BatchResponse batchResponse) {
@@ -182,7 +182,7 @@ public class FlinkDynamoDBSinkTest {
 
         @Override
         protected DynamoDBBatchProcessor buildDynamoDBBatchProcessor(DynamoDBBatchProcessor.Listener listener) {
-            this.dynamoDBBatchProcessor = new DynamoDBBatchProcessor(new DummyAmazonDynamoDBBuilder(), 0, 0, null) {
+            this.dynamoDBBatchProcessor = new DynamoDBBatchProcessor(new DummyFlinkDynamoDBClientBuilder(), 0, 0, null) {
 
                 @Override
                 public void add(final DynamoDBWriteRequest dynamoDBWriteRequest) {
@@ -212,10 +212,10 @@ public class FlinkDynamoDBSinkTest {
         }
     }
 
-    private static class DummyAmazonDynamoDBBuilder implements AmazonDynamoDBBuilder {
+    private static class DummyFlinkDynamoDBClientBuilder implements FlinkDynamoDBClientBuilder {
 
         @Override
-        public AmazonDynamoDB build() {
+        public DynamoDbClient build() {
             return null;
         }
     }
