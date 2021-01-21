@@ -5,22 +5,23 @@
 [![License][license-image]][license-url]
 [![Developed at Klarna][klarna-image]][klarna-url]
 
-At Klarna we use streaming applications extensively. Amazon Kinesis Data Analytics with Flink 1.11.3 is starting to be one of the choices for the development of new streaming analytics applications at Klarna. Unfortunately, Apache Flink does not provide a connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database out of the box at the moment. This project is to solve this gap.
+At Klarna we use streaming applications extensively. Amazon Kinesis Data Analytics with Flink 1.11.1 is starting to be one of the choices for the development of new streaming analytics applications at Klarna. Unfortunately, Apache Flink does not provide a connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database out of the box at the moment. This project is to solve this gap.
 
 ## Usage example
 
 ```java
-import com.klarna.flink.connectors.dynamodb.DynamoDBBuilder;
+import com.klarna.flink.connectors.dynamodb.FlinkDynamoDBClientBuilder;
 import com.klarna.flink.connectors.dynamodb.dynamodb.DynamoDBSinkBaseConfig;
 import com.klarna.flink.connectors.dynamodb.dynamodb.DynamoDBSinkPut;
 import com.klarna.flink.connectors.dynamodb.NoOpDynamoDBFailureHandler;
+import software.amazon.awssdk.regions.Region;
 
 ...
 
-final AmazonDynamoDBBuilder dynamoDBBuilder = new DynamoDBBuilder() {
+final FlinkDynamoDBClientBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     @Override
-    public AmazonDynamoDB build() {
-        return AmazonDynamoDBClientBuilder.standard().withRegion('eu-west-1').build();
+    public DynamoDBClient build() {
+        return DynamoDBClient.builder().withRegion(Region.EU_WEST_1).build();
     }
 };
 
