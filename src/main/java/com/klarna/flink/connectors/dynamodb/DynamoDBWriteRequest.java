@@ -18,7 +18,7 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.model.WriteRequest;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 public class DynamoDBWriteRequest {
 

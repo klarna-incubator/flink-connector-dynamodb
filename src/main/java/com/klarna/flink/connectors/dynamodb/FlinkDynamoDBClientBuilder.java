@@ -18,15 +18,15 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 import java.io.Serializable;
 
 /**
- * This class is used to configure a {@link com.amazonaws.services.dynamodbv2.AmazonDynamoDB} after deployment.
+ * This class is used to configure a {@link software.amazon.awssdk.services.dynamodb.DynamoDbClient} after deployment.
  * The AmazonDynamoDB represents the connection that will be established to DynamoDB.
  */
-public interface AmazonDynamoDBBuilder extends Serializable {
+public interface FlinkDynamoDBClientBuilder extends Serializable {
 
     /**
      * Configures the connection to DynamoDB.
@@ -35,5 +35,5 @@ public interface AmazonDynamoDBBuilder extends Serializable {
      *
      * @return configured connection
      */
-    AmazonDynamoDB build();
+    DynamoDbClient build();
 }
