@@ -2,16 +2,27 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
     <packaging>jar</packaging>
     <groupId>com.klarna</groupId>
     <version>1.0.0</version>
     <artifactId>flink-connector-dynamodb</artifactId>
 
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
     <name>Flink DynamoDB Sink</name>
     <organization>
         <name>klarna</name>
     </organization>
+    <description>Java library provides Apache Flink connector sink for AWS DynamoDB database
+        that can be used with Flink 1.11.1 runtime version.</description>
+    <url>https://github.com/klarna-incubator/flink-connector-dynamodb</url>
     <developers>
         <developer>
             <id>nir.tsruya</id>
@@ -22,13 +33,29 @@
             </roles>
             <timezone>Europe/Stockholm</timezone>
         </developer>
+        <developer>
+            <id>arianrohani</id>
+            <name>Arian Rohani</name>
+            <organization>klarna</organization>
+            <roles>
+                <role>developer</role>
+            </roles>
+            <timezone>Europe/Stockholm</timezone>
+            <email>arianrohani@gmail.com</email>
+        </developer>
     </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/klarna-incubator/flink-connector-dynamodb.git</connection>
+        <developerConnection>scm:git:ssh://github.com:klarna-incubator/flink-connector-dynamodb.git</developerConnection>
+        <url>https://github.com/klarna-incubator/flink-connector-dynamodb</url>
+    </scm>
 
     <distributionManagement>
         <repository>
-            <id>github</id>
-            <name>GitHub Klarna Incubator Apache Maven Packages</name>
-            <url>https://maven.pkg.github.com/klarna-incubator/flink-connector-dynamodb</url>
+            <id>ossrh</id>
+            <name>Central Repository OSSRH</name>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
         </repository>
     </distributionManagement>
 
@@ -44,7 +71,6 @@
     </properties>
 
     <build>
-        <finalName>${project.groupId}:${project.artifactId}:${project.packaging}:${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -54,6 +80,53 @@
                     <source>${java.version}</source>
                     <target>${java.version}</target>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>2.2.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>1.6</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                        <configuration>
+                            <!-- Prevent gpg from using pinentry programs -->
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>2.9.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
