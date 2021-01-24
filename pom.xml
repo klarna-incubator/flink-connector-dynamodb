@@ -8,6 +8,14 @@
     <version>1.0.0</version>
     <artifactId>flink-connector-dynamodb</artifactId>
 
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <name>Flink DynamoDB Sink</name>
     <organization>
         <name>klarna</name>
@@ -24,13 +32,34 @@
         </developer>
     </developers>
 
-    <distributionManagement>
-        <repository>
+    <scm>
+        <connection>scm:git:git://github.com/klarna-incubator/flink-connector-dynamodb.git</connection>
+        <developerConnection>scm:git:ssh://github.com:klarna-incubator/flink-connector-dynamodb.git</developerConnection>
+        <url>https://github.com/klarna-incubator/flink-connector-dynamodb</url>
+    </scm>
+
+    <profiles>
+        <profile>
             <id>github</id>
-            <name>GitHub Klarna Incubator Apache Maven Packages</name>
-            <url>https://maven.pkg.github.com/klarna-incubator/flink-connector-dynamodb</url>
-        </repository>
-    </distributionManagement>
+            <distributionManagement>
+                <repository>
+                    <id>github</id>
+                    <name>GitHub Klarna Incubator Apache Maven Packages</name>
+                    <url>https://maven.pkg.github.com/klarna-incubator/flink-connector-dynamodb</url>
+                </repository>
+            </distributionManagement>
+        </profile>
+        <profile>
+            <id>ossrh</id>
+            <distributionManagement>
+                <repository>
+                    <id>ossrh</id>
+                    <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+                </repository>
+            </distributionManagement>
+        </profile>
+    </profiles>
+
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
