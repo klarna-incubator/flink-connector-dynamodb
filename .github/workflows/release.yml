@@ -1,4 +1,4 @@
-name: Publish package to GitHub Klarna Apache Maven Packages and Maven Central Repository
+name: Publish package to GitHub Packages and Maven Central Repository
 
 on:
   release:
