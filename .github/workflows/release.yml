@@ -8,7 +8,7 @@ jobs:
   deploy-to-maven:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
       - name: Set up Maven Central Repository
         uses: actions/setup-java@v1
         with:
