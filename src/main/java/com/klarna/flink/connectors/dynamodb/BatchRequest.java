@@ -27,8 +27,10 @@ public class BatchRequest {
 
     private final Map<String, List<WriteRequest>> batch;
     private final int batchSize;
+    private final long batchId;
 
-    public BatchRequest(final Map<String, List<WriteRequest>> batch, int batchSize) {
+    public BatchRequest(final long batchId, final Map<String, List<WriteRequest>> batch, int batchSize) {
+        this.batchId = batchId;
         this.batch = batch;
         this.batchSize = batchSize;
     }
@@ -39,6 +41,10 @@ public class BatchRequest {
 
     public int getBatchSize() {
         return batchSize;
+    }
+
+    public long getbatchId() {
+        return batchId;
     }
 
 }

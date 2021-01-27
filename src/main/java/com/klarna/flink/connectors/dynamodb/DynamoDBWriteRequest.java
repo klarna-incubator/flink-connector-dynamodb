@@ -20,7 +20,11 @@ package com.klarna.flink.connectors.dynamodb;
 
 import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
-public class DynamoDBWriteRequest {
+import java.io.Serializable;
+
+public class DynamoDBWriteRequest implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private String tableName;
     private WriteRequest writeRequest;

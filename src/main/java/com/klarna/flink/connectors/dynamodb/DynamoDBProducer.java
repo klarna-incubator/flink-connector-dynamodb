@@ -18,26 +18,28 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
+import com.google.common.util.concurrent.SettableFuture;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.util.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 
 /**
@@ -49,52 +51,28 @@ import java.util.concurrent.*;
  * Concurrent access to this class from multiple threads must be synchronized externally.
  */
 @Internal
-public class DynamoDBBatchProcessor {
+public class DynamoDBProducer {
 
-    /**
-     * Listener for batch insert operation. allows fot additional logic to be executed on batch request success/failure
-     */
-
-    public interface Listener {
-
-        /**
-         * invoke on successful batch insert
-         * @param batchResponse the response from the batch insert
-         */
-        void onSuccess(BatchResponse batchResponse);
-
-        /**
-         * invoked on failed batch insert
-         * @param t the exception thrown by the batch insert
-         */
-        void onFailure(Throwable t);
-    }
+    private static final Logger LOG = LoggerFactory.getLogger(DynamoDBProducer.class);
 
     private DynamoDbClient dynamoDbClient;
 
     private static final int corePoolSize = Runtime.getRuntime().availableProcessors() * (1 + 40/2);
 
-    private final ListeningExecutorService listeningExecutorService;
+    private final ExecutorService taskExecutor;
+
+    private final CompletionService<BatchResponse> completionService;
 
     /** executor service invoking the batch requests to DynamoDB */
-    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
-
-    /** a semaphore to permit only allowed number of concurrent requests to be executed */
-    private Semaphore semaphore;
+    private final ExecutorService executor = Executors.newCachedThreadPool(new ThreadFactoryBuilder()
+            .setDaemon(true)
+            .setNameFormat("dynamodb-sink-%d")
+            .build());
 
     /** is the processor closed */
     private transient volatile boolean closed = false;
 
-    /** a listener to invoke in the future callback */
-    private Listener listener;
-
-    /** a callback to invoke on a completed future */
-    private FutureCallback<BatchResponse> callback;
-
     private final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder;
-
-    /** max number of concurrent requests that are permitted */
-    private final int maxConcurrentRequests;
 
     /** the batch size for the batch request */
     private final int batchSize;
@@ -105,22 +83,27 @@ public class DynamoDBBatchProcessor {
     /** the size of the next batch */
     private int numberOfRecords = 0;
 
+    private long batchNumber = 1;
+
+    private Set<String> seenKeys = new HashSet<>();
+
+    private final Map<Long, SettableFuture<BatchResponse>> futures = new ConcurrentHashMap<>();
+
     /** A queue for the requests. This queue is blocking. */
     private final BlockingQueue<BatchRequest> queue = new LinkedBlockingQueue<>();
 
-    public DynamoDBBatchProcessor(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
-                                  final int maxConcurrentRequests,
-                                  final int batchSize,
-                                  final DynamoDBBatchProcessor.Listener listener) {
+    private KeySelector<DynamoDBWriteRequest, String> keySelector;
+
+    public DynamoDBProducer(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
+                            final KeySelector<DynamoDBWriteRequest, String> keySelector,
+                            final int batchSize) {
         Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "amazonDynamoDBWBuilder must not be null");
         this.flinkDynamoDBClientBuilder = flinkDynamoDBClientBuilder;
-        final ThreadPoolExecutor threadPoolExecutor =
-                new ThreadPoolExecutor(corePoolSize, corePoolSize, 1000, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
-        listeningExecutorService = MoreExecutors.listeningDecorator(threadPoolExecutor);
-        this.listener = listener;
-        this.maxConcurrentRequests = maxConcurrentRequests;
+        taskExecutor = new ThreadPoolExecutor(corePoolSize, corePoolSize, 1000, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
         this.batchSize = batchSize;
         batchUnderProcess = new HashMap<>(batchSize);
+        completionService = new ExecutorCompletionService<>(executor);
+        this.keySelector = keySelector;
     }
 
     public void open() {
@@ -128,33 +111,51 @@ public class DynamoDBBatchProcessor {
             throw new RuntimeException("Writer is closed");
         }
         this.dynamoDbClient = flinkDynamoDBClientBuilder.build();
-        this.semaphore = new Semaphore(maxConcurrentRequests);
-        callback = new FutureCallback<BatchResponse>() {
-            @Override
-            public void onSuccess(@Nullable BatchResponse out) {
-                semaphore.release();
-                listener.onSuccess(out);
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                semaphore.release();
-                listener.onFailure(t);
-            }
-        };
-        executorService.execute(() -> {
+        executor.execute(() -> {
             while (!closed) {
                 try {
                     BatchRequest batchRequest = queue.take();
-                    try {
-                        semaphore.acquire();
-                    } catch (InterruptedException e) {
-                        semaphore.release();
-                        Thread.currentThread().interrupt();
-                    }
-                    Futures.addCallback(batchWrite(batchRequest), callback, MoreExecutors.directExecutor());
+                    completionService.submit(batchWrite(batchRequest));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                }
+            }
+        });
+        executor.execute(() -> {
+            while(!closed) {
+                try {
+                    Future<BatchResponse> future = completionService.take();
+                    BatchResponse batchResponse = future.get();
+                    long id = batchResponse.getBatchId();
+                    SettableFuture<BatchResponse> f = futures.remove(id);
+                    if (f == null) {
+                        LOG.error("Future was not found for batch id {}", id);
+                        throw new RuntimeException("Future for batch id " + id + " not found");
+                    }
+                    if (batchResponse.isSuccessful()) {
+                        f.set(batchResponse);
+                    } else {
+                        f.setException(new RuntimeException("Failed to execute batch"));
+                    }
+                } catch (InterruptedException | ExecutionException e) {
+                    if (!closed) {
+                        closed = true;
+                        try {
+                            this.taskExecutor.awaitTermination(10, TimeUnit.SECONDS);
+                            this.executor.awaitTermination(15, TimeUnit.SECONDS);
+                        } catch (InterruptedException e1) {
+                            LOG.error("Shutdown request could not finish gracefully. in process batches might be lost");
+                        }
+                        this.taskExecutor.shutdownNow();
+                        this.executor.shutdownNow();
+
+                        for (Map.Entry<Long, SettableFuture<BatchResponse>> entry : futures.entrySet()) {
+                            entry.getValue().setException(e);
+                        }
+
+                        futures.clear();
+                        dynamoDbClient.close();
+                    }
                 }
             }
         });
@@ -164,21 +165,37 @@ public class DynamoDBBatchProcessor {
      * add a DynamoDB request. accumulate the requests until batchSize, then promote to the queue
      * @param dynamoDBWriteRequest a single write request to DynamoDB
      */
-    public void add(final DynamoDBWriteRequest dynamoDBWriteRequest) {
+    public ListenableFuture<BatchResponse> add(final DynamoDBWriteRequest dynamoDBWriteRequest) {
+        if (keySelector != null) {
+            try {
+                String key = keySelector.getKey(dynamoDBWriteRequest);
+                if (seenKeys.contains(key)) {
+                    promoteBatch();
+                } else {
+                    seenKeys.add(key);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
         numberOfRecords++;
         String tableName = dynamoDBWriteRequest.getTableName();
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
                 k -> new ArrayList<>());
         writeRequests.add(dynamoDBWriteRequest.getWriteRequest());
+        long currentBatchNumber = batchNumber;
         if (numberOfRecords >= batchSize) {
             promoteBatch();
         }
+        return futures.computeIfAbsent(currentBatchNumber, k -> SettableFuture.create());
     }
 
     private void promoteBatch() {
-        queue.offer(new BatchRequest(batchUnderProcess, numberOfRecords));
+        queue.offer(new BatchRequest(batchNumber, batchUnderProcess, numberOfRecords));
         batchUnderProcess = new HashMap<>(batchSize);
         numberOfRecords = 0;
+        batchNumber++;
+        seenKeys.clear();
     }
 
     /**
@@ -191,8 +208,8 @@ public class DynamoDBBatchProcessor {
     }
 
     // currently protected to allow overriding for testing. should be extracted from this class.
-    protected ListenableFuture<BatchResponse> batchWrite(final BatchRequest batchRequest) {
-        return listeningExecutorService.submit(() -> {
+    protected Callable<BatchResponse> batchWrite(final BatchRequest batchRequest) {
+        return () -> {
             BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder()
                     .requestItems(batchRequest.getBatch())
                     .build();
@@ -232,11 +249,25 @@ public class DynamoDBBatchProcessor {
                 retries++;
             }
             if (retry && t != null) {
-                throw new IOException("Error in batch insert after retries");
+                return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, t);
             }
-            return BatchResponse.success(batchRequest.getBatchSize());
-        });
+            return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), true, null);
+        };
 
+    }
+
+    public int getOutstandingRecordsCount() {
+        return futures.size();
+    }
+
+    @VisibleForTesting
+    BlockingQueue<BatchRequest> getQueue() {
+        return queue;
+    }
+
+    @VisibleForTesting
+    Map<String, List<WriteRequest>> getUnderConstruction() {
+        return batchUnderProcess;
     }
 
     public void close() {
@@ -247,17 +278,8 @@ public class DynamoDBBatchProcessor {
         if (dynamoDbClient != null) {
             dynamoDbClient.close();
         }
-        executorService.shutdown();
-    }
-
-    @VisibleForTesting
-    int getAvailablePermits() {
-        return semaphore.availablePermits();
-    }
-
-    @VisibleForTesting
-    BlockingQueue<BatchRequest> getQueue() {
-        return queue;
+        executor.shutdown();
+        taskExecutor.shutdown();
     }
 
 }

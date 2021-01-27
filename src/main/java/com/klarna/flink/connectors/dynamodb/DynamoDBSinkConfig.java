@@ -37,24 +37,23 @@ public class DynamoDBSinkConfig implements Serializable {
      */
     private static final int DEFAULT_BATCH_SIZE = 25;
 
-    /** Maximum number of concurrent requests allowed. */
-    private final int maxConcurrentRequests;
-
     /** Batch size, max batch size is 25 */
     private final int batchSize;
 
-    public DynamoDBSinkConfig(int maxConcurrentRequests,
+    private int queueLimit;
+
+    public DynamoDBSinkConfig(int queueLimit,
                               int batchSize) {
-        Preconditions.checkArgument(maxConcurrentRequests > 0,
-                "Max concurrent requests is expected to be positive");
+        Preconditions.checkArgument(queueLimit > 0,
+                "Queue limit is expected to be positive");
         Preconditions.checkArgument(batchSize > 0 && batchSize <= 25,
                 "Batch size is expected to be greater than 1 and less than equals to 25");
-        this.maxConcurrentRequests = maxConcurrentRequests;
+        this.queueLimit = queueLimit;
         this.batchSize = batchSize;
     }
 
-    public int getMaxConcurrentRequests() {
-        return maxConcurrentRequests;
+    public int getQueueLimit() {
+        return queueLimit;
     }
 
     public int getBatchSize() {
@@ -70,11 +69,11 @@ public class DynamoDBSinkConfig implements Serializable {
      * Builder for the {@link DynamoDBSinkConfig}.
      */
     public static class Builder {
-        private int maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS;
+        private int queueLimit = DEFAULT_MAX_CONCURRENT_REQUESTS;
         private int batchSize = DEFAULT_BATCH_SIZE;
 
-        public Builder maxConcurrentRequests(final int maxConcurrentRequests) {
-            this.maxConcurrentRequests = maxConcurrentRequests;
+        public Builder queueLimit(final int queueLimit) {
+            this.queueLimit = queueLimit;
             return this;
         }
 
@@ -84,7 +83,7 @@ public class DynamoDBSinkConfig implements Serializable {
         }
 
         public DynamoDBSinkConfig build() {
-            return new DynamoDBSinkConfig(maxConcurrentRequests, batchSize);
+            return new DynamoDBSinkConfig(queueLimit, batchSize);
         }
 
     }
