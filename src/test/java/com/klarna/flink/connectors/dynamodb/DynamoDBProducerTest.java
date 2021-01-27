@@ -15,6 +15,8 @@ import java.util.concurrent.TimeoutException;
 
 import static junit.framework.TestCase.assertEquals;
 import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertNotSame;
+import static junit.framework.TestCase.assertSame;
 import static junit.framework.TestCase.assertTrue;
 
 public class DynamoDBProducerTest {
@@ -61,6 +63,23 @@ public class DynamoDBProducerTest {
             assertTrue(futures.get(i).isDone());
         }
         producer.close();
+    }
+
+    @Test
+    public void testAddReturnsSameFutureForBatch() {
+        DummyDynamoDBProducer producer =
+                new DummyDynamoDBProducer(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        null,
+                        25);
+        ListenableFuture<BatchResponse> first = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
+        for (int i = 1; i < 25; i++) {
+            ListenableFuture<BatchResponse> f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
+            assertSame(f, first);
+        }
+
+        ListenableFuture<BatchResponse> different = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
+        assertNotSame(different, first);
     }
 
     @Test
