@@ -41,11 +41,19 @@ env.addSource(createKafkaConsumer())
 ```
 
 ## Development setup
+This project is available from Maven Central Repository.
 
-This project uses [Maven](https://maven.apache.org/) to set up the development environment. The recommended workflow to build and install the library is the following.
-
-```sh
-mvn clean install
+### Maven
+```
+<dependency>
+    <groupId>com.klarna</groupId>
+    <artifactId>flink-connector-dynamodb</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+### Gradle
+```
+implementation com.klarna:flink-connector-dynamodb:1.0.0
 ```
 
 ## How to contribute
