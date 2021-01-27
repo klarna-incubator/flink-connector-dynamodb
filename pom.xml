@@ -59,7 +59,7 @@
     </properties>
 
     <build>
-        <finalName>${project.groupId}:${project.artifactId}:${project.packaging}:${project.version}</finalName>
+        <finalName>${project.groupId}:${project.artifactId}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
