@@ -9,11 +9,6 @@
     <version>1.0.0</version>
     <artifactId>flink-connector-dynamodb</artifactId>
 
-    <name>flink-connector-dynamodb</name>
-    <description>Java library provides Apache Flink connector sink for AWS DynamoDB database
-        that can be used with Flink 1.11.1 runtime version.</description>
-    <url>https://github.com/klarna-incubator/flink-connector-dynamodb</url>
-
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
@@ -21,11 +16,13 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-
     <name>Flink DynamoDB Sink</name>
     <organization>
         <name>klarna</name>
     </organization>
+    <description>Java library provides Apache Flink connector sink for AWS DynamoDB database
+        that can be used with Flink 1.11.1 runtime version.</description>
+    <url>https://github.com/klarna-incubator/flink-connector-dynamodb</url>
     <developers>
         <developer>
             <id>nir.tsruya</id>
