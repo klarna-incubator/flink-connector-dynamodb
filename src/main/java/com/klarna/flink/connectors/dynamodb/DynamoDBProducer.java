@@ -83,16 +83,20 @@ public class DynamoDBProducer {
     /** the size of the next batch */
     private int numberOfRecords = 0;
 
-    private long batchNumber = 1;
+    /** batchId of the current batch */
+    private long batchId = 1;
 
+    /** used to deduplicate messages by key - set of keys in the current batch */
     private Set<String> seenKeys = new HashSet<>();
 
+    /** used to deduplicate messages by key - get a string key from the current {@link DynamoDBWriteRequest} */
+    private KeySelector<DynamoDBWriteRequest, String> keySelector;
+
+    /** map key is batchId and the value is the outgoing batch */
     private final Map<Long, SettableFuture<BatchResponse>> futures = new ConcurrentHashMap<>();
 
     /** A queue for the requests. This queue is blocking. */
     private final BlockingQueue<BatchRequest> queue = new LinkedBlockingQueue<>();
-
-    private KeySelector<DynamoDBWriteRequest, String> keySelector;
 
     public DynamoDBProducer(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                             final KeySelector<DynamoDBWriteRequest, String> keySelector,
@@ -117,7 +121,7 @@ public class DynamoDBProducer {
                     BatchRequest batchRequest = queue.take();
                     completionService.submit(batchWrite(batchRequest));
                 } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    fatalError(e);
                 }
             }
         });
@@ -138,27 +142,31 @@ public class DynamoDBProducer {
                         f.setException(new RuntimeException("Failed to execute batch"));
                     }
                 } catch (InterruptedException | ExecutionException e) {
-                    if (!closed) {
-                        closed = true;
-                        try {
-                            this.taskExecutor.awaitTermination(10, TimeUnit.SECONDS);
-                            this.executor.awaitTermination(15, TimeUnit.SECONDS);
-                        } catch (InterruptedException e1) {
-                            LOG.error("Shutdown request could not finish gracefully. in process batches might be lost");
-                        }
-                        this.taskExecutor.shutdownNow();
-                        this.executor.shutdownNow();
-
-                        for (Map.Entry<Long, SettableFuture<BatchResponse>> entry : futures.entrySet()) {
-                            entry.getValue().setException(e);
-                        }
-
-                        futures.clear();
-                        dynamoDbClient.close();
-                    }
+                    fatalError(e);
                 }
             }
         });
+    }
+
+    private synchronized void fatalError(Exception e) {
+        if (!closed) {
+            closed = true;
+            try {
+                this.taskExecutor.awaitTermination(10, TimeUnit.SECONDS);
+                this.executor.awaitTermination(15, TimeUnit.SECONDS);
+            } catch (InterruptedException e1) {
+                LOG.error("Shutdown request could not finish gracefully. in process batches might be lost");
+            }
+            this.taskExecutor.shutdownNow();
+            this.executor.shutdownNow();
+
+            for (Map.Entry<Long, SettableFuture<BatchResponse>> entry : futures.entrySet()) {
+                entry.getValue().setException(e);
+            }
+
+            futures.clear();
+            dynamoDbClient.close();
+        }
     }
 
     /**
@@ -183,7 +191,7 @@ public class DynamoDBProducer {
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
                 k -> new ArrayList<>());
         writeRequests.add(dynamoDBWriteRequest.getWriteRequest());
-        long currentBatchNumber = batchNumber;
+        long currentBatchNumber = batchId;
         if (numberOfRecords >= batchSize) {
             promoteBatch();
         }
@@ -191,10 +199,14 @@ public class DynamoDBProducer {
     }
 
     private void promoteBatch() {
-        queue.offer(new BatchRequest(batchNumber, batchUnderProcess, numberOfRecords));
+        try {
+            queue.put(new BatchRequest(batchId, batchUnderProcess, numberOfRecords));
+        } catch (InterruptedException e) {
+            fatalError(e);
+        }
         batchUnderProcess = new HashMap<>(batchSize);
         numberOfRecords = 0;
-        batchNumber++;
+        batchId++;
         seenKeys.clear();
     }
 
@@ -260,16 +272,6 @@ public class DynamoDBProducer {
         return futures.size();
     }
 
-    @VisibleForTesting
-    BlockingQueue<BatchRequest> getQueue() {
-        return queue;
-    }
-
-    @VisibleForTesting
-    Map<String, List<WriteRequest>> getUnderConstruction() {
-        return batchUnderProcess;
-    }
-
     public void close() {
         if (closed) {
             return;
@@ -280,6 +282,16 @@ public class DynamoDBProducer {
         }
         executor.shutdown();
         taskExecutor.shutdown();
+    }
+
+    @VisibleForTesting
+    BlockingQueue<BatchRequest> getQueue() {
+        return queue;
+    }
+
+    @VisibleForTesting
+    Map<String, List<WriteRequest>> getUnderConstruction() {
+        return batchUnderProcess;
     }
 
 }

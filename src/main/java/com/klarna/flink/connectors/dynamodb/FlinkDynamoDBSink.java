@@ -67,10 +67,13 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     /** Callback handling failures */
     private transient FutureCallback<BatchResponse> callback;
 
+    /** holds the first thrown exception in the sink */
     private Throwable thrownException = null;
 
+    /** limit for the outgoing batches */
     private long queueLimit;
 
+    /** key selector passed to the producer to deduplicate by keys */
     private KeySelector<DynamoDBWriteRequest, String> keySelector;
 
     /**
@@ -100,13 +103,10 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
             throw new NullPointerException("DynamoDB batch processor is closed");
         }
         checkAsyncErrors();
-
         boolean didWaitForFlush = enforceQueueLimit();
-
         if (didWaitForFlush) {
             checkAsyncErrors();
         }
-
         ListenableFuture<BatchResponse> add = producer.add(value);
         Futures.addCallback(add, callback, MoreExecutors.directExecutor());
     }
@@ -125,7 +125,7 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
                         backpressureLatch.trigger();
                         if (!result.isSuccessful()) {
                             if (thrownException == null) {
-                                thrownException = new RuntimeException("Error", result.getT());
+                                thrownException = new RuntimeException("Error", result.getThrowable());
                             }
                         }
                     }
@@ -167,15 +167,6 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
         checkAsyncErrors();
         flushSync();
         checkAsyncErrors();
-    }
-
-    /**
-     * Creates a {@link DynamoDBProducer}. Exposed so that tests can inject mock producers easily.
-     */
-    @VisibleForTesting
-    protected DynamoDBProducer getDynamoDBProducer() {
-        return new DynamoDBProducer(flinkDynamoDBClientBuilder, keySelector,
-                dynamoDBSinkConfig.getBatchSize());
     }
 
     /**
@@ -228,6 +219,15 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
                 break;
             }
         }
+    }
+
+    /**
+     * Creates a {@link DynamoDBProducer}. Exposed so that tests can inject mock producers easily.
+     */
+    @VisibleForTesting
+    protected DynamoDBProducer getDynamoDBProducer() {
+        return new DynamoDBProducer(flinkDynamoDBClientBuilder, keySelector,
+                dynamoDBSinkConfig.getBatchSize());
     }
 
 }

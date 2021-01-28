@@ -23,42 +23,32 @@ public class DynamoDBProducerTest {
 
     @Test
     public void testExecutorPollingBatch() throws InterruptedException, ExecutionException, TimeoutException {
-
         DummyDynamoDBProducer producer =
                 new DummyDynamoDBProducer(
                         new DummyFlinkDynamoDBClientBuilder(),
                         null,
                         25);
         producer.open();
-
         List<ListenableFuture<BatchResponse>> futures = new ArrayList<>();
-
         ListenableFuture<BatchResponse> f;
         for (int i = 0; i < 25; i++) {
             f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
             futures.add(f);
         }
-
         f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
         futures.add(f);
-
         futures.get(0).get(1000, TimeUnit.MILLISECONDS);
-
         //consuming batches of 25
         assertEquals(1, producer.getOutstandingRecordsCount());
-
         //one in the currentmap
         assertEquals(1,
                 producer.getUnderConstruction().values().stream()
                         .mapToInt(List::size)
                         .sum());
-
         //no map in the queue
         assertEquals(0, producer.getQueue().size());
-
         //all the futures are done but the last
         assertFalse(futures.get(futures.size() - 1).isDone());
-
         for (int i = 0; i < futures.size() - 1; i++) {
             assertTrue(futures.get(i).isDone());
         }
@@ -77,7 +67,6 @@ public class DynamoDBProducerTest {
             ListenableFuture<BatchResponse> f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
             assertSame(f, first);
         }
-
         ListenableFuture<BatchResponse> different = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
         assertNotSame(different, first);
     }
@@ -105,9 +94,7 @@ public class DynamoDBProducerTest {
         //no map in the queue
         assertEquals(1, producer.getQueue().size());
         f.get(1000, TimeUnit.MILLISECONDS);
-
         assertTrue(f.isDone());
-
         producer.close();
     }
 

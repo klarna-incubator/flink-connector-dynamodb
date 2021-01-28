@@ -22,18 +22,18 @@ public class BatchResponse {
 
     private final long batchId;
     private final int batchSize;
-    private final Throwable t;
+    private final Throwable throwable;
     private final boolean successful;
 
-    public BatchResponse(long batchId, int batchSize, boolean successful, Throwable t) {
+    public BatchResponse(long batchId, int batchSize, boolean successful, Throwable throwable) {
         this.batchSize = batchSize;
-        this.t = t;
+        this.throwable = throwable;
         this.batchId = batchId;
         this.successful = successful;
     }
 
-    public Throwable getT() {
-        return t;
+    public Throwable getThrowable() {
+        return throwable;
     }
 
     public int getBatchSize() {
