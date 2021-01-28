@@ -117,7 +117,6 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
         final MetricGroup dynamoDBSinkMectricGroup =
                 getRuntimeContext().getMetricGroup().addGroup(DYNAMO_DB_SINK_METRIC_GROUP);
         this.backpressureCycles = dynamoDBSinkMectricGroup.counter(METRIC_BACKPRESSURE_CYCLES);
-        this.producer = getDynamoDBProducer();
         callback =
                 new FutureCallback<>() {
                     @Override
@@ -136,19 +135,20 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
                         thrownException = t;
                     }
                 };
-        producer.open();
+        this.producer = getDynamoDBProducer();
     }
 
     @Override
     public void close() throws Exception {
         try {
-            checkAsyncErrors();
+            LOG.info("Closing sink");
+            super.close();
             flushSync();
             checkAsyncErrors();
         } finally {
             try {
                 if (producer != null) {
-                    producer.close();
+                    producer.destroy();
                     producer = null;
                 }
             } catch (Exception e) {

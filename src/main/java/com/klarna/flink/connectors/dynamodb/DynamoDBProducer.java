@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This class is used to send batch requests to DynamoDB
@@ -70,9 +71,7 @@ public class DynamoDBProducer {
             .build());
 
     /** is the processor closed */
-    private transient volatile boolean closed = false;
-
-    private final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder;
+    private AtomicBoolean shutdown = new AtomicBoolean(false);
 
     /** the batch size for the batch request */
     private final int batchSize;
@@ -101,32 +100,25 @@ public class DynamoDBProducer {
     public DynamoDBProducer(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                             final KeySelector<DynamoDBWriteRequest, String> keySelector,
                             final int batchSize) {
-        Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "amazonDynamoDBWBuilder must not be null");
-        this.flinkDynamoDBClientBuilder = flinkDynamoDBClientBuilder;
+        Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "flinkDynamoDBClientBuilder must not be null");
         taskExecutor = new ThreadPoolExecutor(corePoolSize, corePoolSize, 1000, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
         this.batchSize = batchSize;
         batchUnderProcess = new HashMap<>(batchSize);
-        completionService = new ExecutorCompletionService<>(executor);
+        completionService = new ExecutorCompletionService<>(taskExecutor);
         this.keySelector = keySelector;
-    }
-
-    public void open() {
-        if (closed) {
-            throw new RuntimeException("Writer is closed");
-        }
         this.dynamoDbClient = flinkDynamoDBClientBuilder.build();
         executor.execute(() -> {
-            while (!closed) {
+            while (!shutdown.get()) {
                 try {
                     BatchRequest batchRequest = queue.take();
                     completionService.submit(batchWrite(batchRequest));
                 } catch (InterruptedException e) {
-                    fatalError(e);
+                    fatalError("Failed to take batch from the queue", e);
                 }
             }
         });
         executor.execute(() -> {
-            while(!closed) {
+            while(!shutdown.get()) {
                 try {
                     Future<BatchResponse> future = completionService.take();
                     BatchResponse batchResponse = future.get();
@@ -142,30 +134,38 @@ public class DynamoDBProducer {
                         f.setException(new RuntimeException("Failed to execute batch"));
                     }
                 } catch (InterruptedException | ExecutionException e) {
-                    fatalError(e);
+                    fatalError("Failed to retrieve future from completion service", e);
                 }
             }
         });
     }
 
-    private synchronized void fatalError(Exception e) {
-        if (!closed) {
-            closed = true;
+    private synchronized void fatalError(String message, Throwable t) {
+        if (!shutdown.getAndSet(true)) {
             try {
-                this.taskExecutor.awaitTermination(10, TimeUnit.SECONDS);
-                this.executor.awaitTermination(15, TimeUnit.SECONDS);
+                this.taskExecutor.awaitTermination(1, TimeUnit.SECONDS);
+                this.executor.awaitTermination(1, TimeUnit.SECONDS);
             } catch (InterruptedException e1) {
                 LOG.error("Shutdown request could not finish gracefully. in process batches might be lost");
             }
             this.taskExecutor.shutdownNow();
             this.executor.shutdownNow();
 
+            RuntimeException futureException;
+            if (t == null) {
+                futureException = new RuntimeException(message);
+            } else {
+                futureException = new RuntimeException(message, t);
+            }
+
             for (Map.Entry<Long, SettableFuture<BatchResponse>> entry : futures.entrySet()) {
-                entry.getValue().setException(e);
+                entry.getValue().setException(futureException);
             }
 
             futures.clear();
-            dynamoDbClient.close();
+            if (dynamoDbClient != null) {
+                dynamoDbClient.close();
+            }
         }
     }
 
@@ -202,7 +202,7 @@ public class DynamoDBProducer {
         try {
             queue.put(new BatchRequest(batchId, batchUnderProcess, numberOfRecords));
         } catch (InterruptedException e) {
-            fatalError(e);
+            fatalError("Failed to promote batch", e);
         }
         batchUnderProcess = new HashMap<>(batchSize);
         numberOfRecords = 0;
@@ -255,7 +255,7 @@ public class DynamoDBProducer {
                         Thread.sleep(jitter);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        throw new IOException("unable to flush; interrupted while doing another attempt", e);
+                        return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, e);
                     }
                 }
                 retries++;
@@ -272,16 +272,8 @@ public class DynamoDBProducer {
         return futures.size();
     }
 
-    public void close() {
-        if (closed) {
-            return;
-        }
-        closed = true;
-        if (dynamoDbClient != null) {
-            dynamoDbClient.close();
-        }
-        executor.shutdown();
-        taskExecutor.shutdown();
+    public void destroy() {
+        fatalError("Destory was called", null);
     }
 
     @VisibleForTesting

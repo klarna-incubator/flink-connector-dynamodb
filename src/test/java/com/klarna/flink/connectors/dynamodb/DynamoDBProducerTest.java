@@ -28,7 +28,6 @@ public class DynamoDBProducerTest {
                         new DummyFlinkDynamoDBClientBuilder(),
                         null,
                         25);
-        producer.open();
         List<ListenableFuture<BatchResponse>> futures = new ArrayList<>();
         ListenableFuture<BatchResponse> f;
         for (int i = 0; i < 25; i++) {
@@ -52,7 +51,7 @@ public class DynamoDBProducerTest {
         for (int i = 0; i < futures.size() - 1; i++) {
             assertTrue(futures.get(i).isDone());
         }
-        producer.close();
+        producer.destroy();
     }
 
     @Test
@@ -77,7 +76,6 @@ public class DynamoDBProducerTest {
                 new DummyDynamoDBProducer(new DummyFlinkDynamoDBClientBuilder(),
                         null,
                         25);
-        producer.open();
         ListenableFuture<BatchResponse> f;
         f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder().build()));
         //spiller consumer a map of 25
@@ -95,7 +93,7 @@ public class DynamoDBProducerTest {
         assertEquals(1, producer.getQueue().size());
         f.get(1000, TimeUnit.MILLISECONDS);
         assertTrue(f.isDone());
-        producer.close();
+        producer.destroy();
     }
 
     private static class DummyDynamoDBProducer extends DynamoDBProducer {
