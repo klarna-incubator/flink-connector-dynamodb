@@ -3,8 +3,8 @@ name: Java CI
 on: [push]
 
 jobs:
-  runs-on: ubuntu-latest
-
+  deploy:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK 11
