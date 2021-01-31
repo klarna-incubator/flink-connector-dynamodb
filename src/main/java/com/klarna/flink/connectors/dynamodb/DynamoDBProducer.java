@@ -222,6 +222,7 @@ public class DynamoDBProducer {
     // currently protected to allow overriding for testing. should be extracted from this class.
     protected Callable<BatchResponse> batchWrite(final BatchRequest batchRequest) {
         return () -> {
+            boolean interrupted = false;
             BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder()
                     .requestItems(batchRequest.getBatch())
                     .build();
@@ -254,8 +255,12 @@ public class DynamoDBProducer {
                                 .nextLong(0, (long) Math.pow(2, retries) * 100);
                         Thread.sleep(jitter);
                     } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
+                        interrupted = true;
                         return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, e);
+                    } finally {
+                        if (interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
                     }
                 }
                 retries++;

@@ -49,8 +49,8 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     /** Batch processor to buffer and send requests to DynamoDB */
     private transient DynamoDBProducer producer;
 
-    /** User-provided handler for failed batch request */
-    private final DynamoDBFailureHandler failureHandler;
+    /** Flag controlling the error behavior of the sink */
+    private boolean failOnError;
 
     /** DynamoDB sink configuration */
     private final DynamoDBSinkConfig dynamoDBSinkConfig;
@@ -81,16 +81,13 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
      * @param flinkDynamoDBClientBuilder builder for dynamo db client
      * @param dynamoDBSinkConfig configuration for dynamo db sink
      * @param keySelector key used to deduplicate records
-     * @param failureHandler failure handler
      */
     public FlinkDynamoDBSink(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                              final DynamoDBSinkConfig dynamoDBSinkConfig,
-                             final KeySelector<DynamoDBWriteRequest, String> keySelector,
-                             final DynamoDBFailureHandler failureHandler) {
+                             final KeySelector<DynamoDBWriteRequest, String> keySelector) {
         Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "amazonDynamoDBBuilder must not be null");
         Preconditions.checkNotNull(dynamoDBSinkConfig, "DynamoDBSinkConfig must not be null");
-        Preconditions.checkNotNull(failureHandler, "FailureHandler must not be null");
-        this.failureHandler = failureHandler;
+        this.failOnError = dynamoDBSinkConfig.isFailOnError();
         this.dynamoDBSinkConfig = dynamoDBSinkConfig;
         this.flinkDynamoDBClientBuilder = flinkDynamoDBClientBuilder;
         this.queueLimit = dynamoDBSinkConfig.getQueueLimit();
@@ -114,17 +111,23 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     @Override
     public void open(Configuration parameters) {
         backpressureLatch = new TimeoutLatch();
-        final MetricGroup dynamoDBSinkMectricGroup =
+        final MetricGroup dynamoDBSinkMetricGroup =
                 getRuntimeContext().getMetricGroup().addGroup(DYNAMO_DB_SINK_METRIC_GROUP);
-        this.backpressureCycles = dynamoDBSinkMectricGroup.counter(METRIC_BACKPRESSURE_CYCLES);
+        this.backpressureCycles = dynamoDBSinkMetricGroup.counter(METRIC_BACKPRESSURE_CYCLES);
         callback =
                 new FutureCallback<>() {
                     @Override
                     public void onSuccess(BatchResponse result) {
                         backpressureLatch.trigger();
                         if (!result.isSuccessful()) {
-                            if (thrownException == null) {
-                                thrownException = new RuntimeException("Error", result.getThrowable());
+                            if (failOnError) {
+                                // only remember the first thrown exception
+                                if (thrownException == null) {
+                                    thrownException =
+                                            new RuntimeException("Record was not sent successful");
+                                }
+                            } else {
+                                LOG.warn("Record was not sent successful");
                             }
                         }
                     }
@@ -132,7 +135,11 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
                     @Override
                     public void onFailure(Throwable t) {
                         backpressureLatch.trigger();
-                        thrownException = t;
+                        if (failOnError) {
+                            thrownException = t;
+                        } else {
+                            LOG.warn("An exception occurred while processing a record", t);
+                        }
                     }
                 };
         this.producer = getDynamoDBProducer();
@@ -166,6 +173,11 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     public void snapshotState(FunctionSnapshotContext ctx) throws Exception {
         checkAsyncErrors();
         flushSync();
+        if (producer.getOutstandingRecordsCount() > 0) {
+            throw new IllegalStateException(
+                    "Number of outstanding records must be zero at this point: "
+                            + producer.getOutstandingRecordsCount());
+        }
         checkAsyncErrors();
     }
 
@@ -175,7 +187,17 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
      */
     private void checkAsyncErrors() throws Exception {
         if (thrownException != null) {
-            failureHandler.onFailure(thrownException);
+            if (failOnError) {
+                throw new RuntimeException(
+                        "An exception was thrown while processing a record",
+                        thrownException);
+            } else {
+                LOG.warn(
+                        "An exception was thrown while processing a record",
+                        thrownException);
+                // reset, prevent double throwing
+                thrownException = null;
+            }
         }
     }
 

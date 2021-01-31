@@ -50,8 +50,7 @@ public class FlinkDynamoDBSinkTest {
                 new FlinkDynamoDBSink(
                         new DummyFlinkDynamoDBClientBuilder(),
                         DynamoDBSinkConfig.builder().build(),
-                        null,
-                        new NoOpDynamoDBFailureHandler()
+                        null
                 );
         assertTrue(InstantiationUtil.isSerializable(sink));
     }
@@ -65,8 +64,7 @@ public class FlinkDynamoDBSinkTest {
                 new DummyFlinkDynamoDBSink(
                         new DummyFlinkDynamoDBClientBuilder(),
                         DynamoDBSinkConfig.builder().build(),
-                        null,
-                        new NoOpDynamoDBFailureHandler()
+                        null
                 );
 
         OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
@@ -107,8 +105,7 @@ public class FlinkDynamoDBSinkTest {
                 new DummyFlinkDynamoDBSink(
                         new DummyFlinkDynamoDBClientBuilder(),
                         DynamoDBSinkConfig.builder().build(),
-                        null,
-                        new NoOpDynamoDBFailureHandler()
+                        null
                 );
 
         OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
@@ -154,8 +151,7 @@ public class FlinkDynamoDBSinkTest {
                 new DummyFlinkDynamoDBSink(
                         new DummyFlinkDynamoDBClientBuilder(),
                         DynamoDBSinkConfig.builder().build(),
-                        null,
-                        new NoOpDynamoDBFailureHandler()
+                        null
                 );
 
         OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
@@ -216,8 +212,7 @@ public class FlinkDynamoDBSinkTest {
                 new DummyFlinkDynamoDBSink(
                         new DummyFlinkDynamoDBClientBuilder(),
                         DynamoDBSinkConfig.builder().build(),
-                        null,
-                        new NoOpDynamoDBFailureHandler()
+                        null
                 );
 
         OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
@@ -286,8 +281,7 @@ public class FlinkDynamoDBSinkTest {
                         DynamoDBSinkConfig.builder()
                                 .queueLimit(1)
                                 .build(),
-                        null,
-                        new NoOpDynamoDBFailureHandler()
+                        null
                 );
 
         OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
@@ -375,9 +369,8 @@ public class FlinkDynamoDBSinkTest {
 
         DummyFlinkDynamoDBSink(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                                DynamoDBSinkConfig dynamoDBSinkConfig,
-                               KeySelector<DynamoDBWriteRequest, String> keySelector,
-                               DynamoDBFailureHandler failureHandler) {
-            super(flinkDynamoDBClientBuilder, dynamoDBSinkConfig, keySelector, failureHandler);
+                               KeySelector<DynamoDBWriteRequest, String> keySelector) {
+            super(flinkDynamoDBClientBuilder, dynamoDBSinkConfig, keySelector);
 
             // set up mock producer
             this.mockProducer = new DummyDynamoDBProducer(flinkDynamoDBClientBuilder,

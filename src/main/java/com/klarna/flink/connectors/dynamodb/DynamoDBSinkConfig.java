@@ -40,16 +40,22 @@ public class DynamoDBSinkConfig implements Serializable {
     /** Batch size, max batch size is 25 */
     private final int batchSize;
 
+    /** how many batch requests are allowed to wait in the queue */
     private int queueLimit;
 
+    /** should the sink fail on error */
+    private boolean failOnError;
+
     public DynamoDBSinkConfig(int queueLimit,
-                              int batchSize) {
+                              int batchSize,
+                              boolean failOnError) {
         Preconditions.checkArgument(queueLimit > 0,
                 "Queue limit is expected to be positive");
         Preconditions.checkArgument(batchSize > 0 && batchSize <= 25,
                 "Batch size is expected to be greater than 1 and less than equals to 25");
         this.queueLimit = queueLimit;
         this.batchSize = batchSize;
+        this.failOnError = failOnError;
     }
 
     public int getQueueLimit() {
@@ -60,6 +66,9 @@ public class DynamoDBSinkConfig implements Serializable {
         return batchSize;
     }
 
+    public boolean isFailOnError() {
+        return failOnError;
+    }
 
     public static Builder builder() {
         return new Builder();
@@ -71,6 +80,7 @@ public class DynamoDBSinkConfig implements Serializable {
     public static class Builder {
         private int queueLimit = DEFAULT_MAX_CONCURRENT_REQUESTS;
         private int batchSize = DEFAULT_BATCH_SIZE;
+        private boolean failOnError = true;
 
         public Builder queueLimit(final int queueLimit) {
             this.queueLimit = queueLimit;
@@ -82,8 +92,13 @@ public class DynamoDBSinkConfig implements Serializable {
             return this;
         }
 
+        public Builder failOnError(final boolean failOnError) {
+            this.failOnError = failOnError;
+            return this;
+        }
+
         public DynamoDBSinkConfig build() {
-            return new DynamoDBSinkConfig(queueLimit, batchSize);
+            return new DynamoDBSinkConfig(queueLimit, batchSize, failOnError);
         }
 
     }

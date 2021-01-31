@@ -106,9 +106,7 @@ public class DynamoDBProducerTest {
 
         @Override
         protected Callable<BatchResponse> batchWrite(final BatchRequest batchRequest) {
-            return () -> {
-              return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), true, null);
-            };
+            return () -> new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), true, null);
         }
     }
 
