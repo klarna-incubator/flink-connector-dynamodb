@@ -1,8 +1,8 @@
-name: Publish package to GitHub Klarna Apache Maven Packages
+name: Publish
 
-on:
-  release:
-    types: [published]
+on: [push]
+  #release:
+  #  types: [published]
 
 jobs:
   deploy:
@@ -13,7 +13,23 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 11
-      - name: Deploy with Maven
-        run: mvn -B deploy
+
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      - name: Set up Apache Maven Central
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_CENTRAL_TOKEN
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Publish to Apache Maven Central
+        run: mvn deploy
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.OSSRH_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
