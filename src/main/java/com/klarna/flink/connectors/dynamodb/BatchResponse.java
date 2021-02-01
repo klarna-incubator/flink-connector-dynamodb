@@ -20,27 +20,31 @@ package com.klarna.flink.connectors.dynamodb;
 
 public class BatchResponse {
 
+    private final long batchId;
     private final int batchSize;
-    private final Throwable t;
+    private final Throwable throwable;
+    private final boolean successful;
 
-    private BatchResponse(int batchSize, Throwable t) {
+    public BatchResponse(long batchId, int batchSize, boolean successful, Throwable throwable) {
         this.batchSize = batchSize;
-        this.t = t;
+        this.throwable = throwable;
+        this.batchId = batchId;
+        this.successful = successful;
     }
 
-    public static BatchResponse success(int batchSize) {
-        return new BatchResponse(batchSize, null);
-    }
-
-    public static BatchResponse fail(Throwable t) {
-        return new BatchResponse(0, t);
-    }
-
-    public Throwable getT() {
-        return t;
+    public Throwable getThrowable() {
+        return throwable;
     }
 
     public int getBatchSize() {
         return batchSize;
+    }
+
+    public long getBatchId() {
+        return batchId;
+    }
+
+    public boolean isSuccessful() {
+        return successful;
     }
 }

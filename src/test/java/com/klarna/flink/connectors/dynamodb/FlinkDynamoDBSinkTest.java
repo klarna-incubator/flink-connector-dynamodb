@@ -18,197 +18,431 @@
 
 package com.klarna.flink.connectors.dynamodb;
 
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
+import org.apache.flink.api.common.time.Deadline;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.core.testutils.CheckedThread;
 import org.apache.flink.core.testutils.MultiShotLatch;
+import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.operators.StreamSink;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
+import org.apache.flink.util.ExceptionUtils;
+import org.apache.flink.util.InstantiationUtil;
 import org.junit.Assert;
 import org.junit.Test;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
-import java.util.Collections;
+import java.time.Duration;
+import java.util.LinkedList;
+import java.util.List;
+
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertTrue;
 
 public class FlinkDynamoDBSinkTest {
 
     @Test
-    public void testSuccessfullPath() throws Exception {
-        final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
-        final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
-                new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
-
-        testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
-        Assert.assertEquals(1, sink.getNumPendingRecords());
-        sink.setBatchResponse(BatchResponse.success(1));
-        sink.manualBatch();
-        Assert.assertEquals(0, sink.getNumPendingRecords());
+    public void testSinkIsSerializable() {
+        final FlinkDynamoDBSink sink =
+                new FlinkDynamoDBSink(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        DynamoDBSinkConfig.builder().build(),
+                        null
+                );
+        assertTrue(InstantiationUtil.isSerializable(sink));
     }
 
-
+    /** Test ensuring that if an invoke call happens right after an async exception is caught, it
+     * should be rethrown.
+     */
     @Test
-    public void testFailureThrownOnInvoke() throws Exception {
-        final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
-        final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+    public void testAsyncErrorRethrownOnInvoke() throws Throwable {
+        final DummyFlinkDynamoDBSink sink =
+                new DummyFlinkDynamoDBSink(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        DynamoDBSinkConfig.builder().build(),
+                        null
+                );
+
+        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
-        sink.setBatchResponse(BatchResponse.fail(new Exception("Test exception")));
-        sink.manualBatch();
+
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+
+        sink.getPendingRecordFutures()
+                .get(0)
+                .setException(new Exception("artificial async exception"));
+
         try {
-            testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
+            testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                    WriteRequest.builder().build())));
         } catch (Exception e) {
-            Assert.assertTrue(e.getCause().getMessage().contains("Test exception"));
+            // the next invoke should rethrow the async exception
+            Assert.assertTrue(
+                    ExceptionUtils.findThrowableWithMessage(e, "artificial async exception")
+                            .isPresent());
+
+            // test succeeded
             return;
         }
+
         Assert.fail();
     }
 
+    /**
+     * Test ensuring that if a snapshot call happens right after an async exception is caught, it
+     * should be rethrown.
+     */
     @Test
-    public void testFailureThrownOnCheckpoint() throws Exception {
-        final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
-        final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+    public void testAsyncErrorRethrownOnCheckpoint() throws Throwable {
+        final DummyFlinkDynamoDBSink sink =
+                new DummyFlinkDynamoDBSink(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        DynamoDBSinkConfig.builder().build(),
+                        null
+                );
+
+        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
-        testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
-        sink.setBatchResponse(BatchResponse.fail(new Exception("Test exception")));
 
-        sink.manualBatch();
+        testHarness.open();
+
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+
+        sink.getPendingRecordFutures()
+                .get(0)
+                .setException(new Exception("artificial async exception"));
+
         try {
             testHarness.snapshot(123L, 123L);
         } catch (Exception e) {
-            Assert.assertTrue(e.getCause().getCause().getMessage().contains("Test exception"));
+            // the next checkpoint should rethrow the async exception
+            Assert.assertTrue(
+                    ExceptionUtils.findThrowableWithMessage(e, "artificial async exception")
+                            .isPresent());
+
+            // test succeeded
             return;
         }
+
         Assert.fail();
     }
 
-    @Test
-    public void testFailureThrownOnClose() throws Exception {
-        final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
-        final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
-                new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
+    /**
+     * Test ensuring that if an async exception is caught for one of the flushed requests on
+     * checkpoint, it should be rethrown; we set a timeout because the test will not finish if the
+     * logic is broken.
+     *
+     * <p>Note that this test does not test the snapshot method is blocked correctly when there are
+     * pending records. The test for that is covered in testAtLeastOnceProducer.
+     */
+    @Test(timeout = 10000)
+    public void testAsyncErrorRethrownAfterFlush() throws Throwable {
+        final DummyFlinkDynamoDBSink sink =
+                new DummyFlinkDynamoDBSink(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        DynamoDBSinkConfig.builder().build(),
+                        null
+                );
+
+        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+                new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
-        sink.setBatchResponse(BatchResponse.fail(new Exception("Test exception")));
-        sink.manualBatch();
+
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+
+        // only let the first record succeed for now
+        BatchResponse batchResponse = new BatchResponse(1, 1, true, null);
+        sink.getPendingRecordFutures().get(0).set(batchResponse);
+
+        CheckedThread snapshotThread =
+                new CheckedThread() {
+                    @Override
+                    public void go() throws Exception {
+                        // this should block at first, since there are still two pending records
+                        // that needs to be flushed
+                        testHarness.snapshot(123L, 123L);
+                    }
+                };
+        snapshotThread.start();
+
+        // let the 2nd message fail with an async exception
+        sink.getPendingRecordFutures()
+                .get(1)
+                .setException(new Exception("artificial async failure for 2nd message"));
+        sink.getPendingRecordFutures().get(2).set(new BatchResponse(2, 1, true, null));
+
         try {
-            testHarness.close();
+            snapshotThread.sync();
         } catch (Exception e) {
-            Assert.assertTrue(e.getCause().getMessage().contains("Test exception"));
+            // after the flush, the async exception should have been rethrown
+            Assert.assertTrue(
+                    ExceptionUtils.findThrowableWithMessage(
+                            e, "artificial async failure for 2nd message")
+                            .isPresent());
+
+            // test succeeded
             return;
         }
+
         Assert.fail();
     }
 
-    @Test(timeout = 5000)
-    public void testFlushOnClose() throws Exception {
-        final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
-        final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
-                new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
+    /**
+     * Test ensuring that the sink is not dropping buffered records; we set a timeout because
+     * the test will not finish if the logic is broken.
+     */
+    @Test(timeout = 10000)
+    public void testAtLeastOnceProducer() throws Throwable {
+        final DummyFlinkDynamoDBSink sink =
+                new DummyFlinkDynamoDBSink(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        DynamoDBSinkConfig.builder().build(),
+                        null
+                );
 
+        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+                new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
-        Assert.assertEquals(1, sink.getNumPendingRecords());
-        CheckedThread snapshotThread = new CheckedThread() {
-            @Override
-            public void go() throws Exception {
-                testHarness.close();
-            }
-        };
+
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                WriteRequest.builder().build())));
+
+        // start a thread to perform checkpointing
+        CheckedThread snapshotThread =
+                new CheckedThread() {
+                    @Override
+                    public void go() throws Exception {
+                        // this should block until all records are flushed;
+                        // if the snapshot implementation returns before pending records are
+                        // flushed,
+                        testHarness.snapshot(123L, 123L);
+                    }
+                };
         snapshotThread.start();
 
-        sink.setBatchResponse(BatchResponse.success(1));
-        sink.manualBatch();
-        Assert.assertEquals(0, sink.getNumPendingRecords());
+        // before proceeding, make sure that flushing has started and that the snapshot is still
+        // blocked;
+        // this would block forever if the snapshot didn't perform a flush
+        sink.waitUntilFlushStarted();
+        Assert.assertTrue(
+                "Snapshot returned before all records were flushed", snapshotThread.isAlive());
 
+        // now, complete the callbacks
+        BatchResponse batchResponse = new BatchResponse(1, 1, true, null);
+
+        sink.getPendingRecordFutures().get(0).set(batchResponse);
+        Assert.assertTrue(
+                "Snapshot returned before all records were flushed", snapshotThread.isAlive());
+
+        sink.getPendingRecordFutures().get(1).set(batchResponse);
+        Assert.assertTrue(
+                "Snapshot returned before all records were flushed", snapshotThread.isAlive());
+
+        sink.getPendingRecordFutures().get(2).set(batchResponse);
+
+        // this would fail with an exception if flushing wasn't completed before the snapshot method
+        // returned
+        snapshotThread.sync();
+
+        testHarness.close();
     }
 
-    @Test(timeout = 5000)
-    public void testFlushOnSnapshot() throws Exception {
-        final DummyFlinkDynamoDBSink sink = new DummyFlinkDynamoDBSink(
-                new DummyFlinkDynamoDBClientBuilder(), DynamoDBSinkConfig.builder().build(), new NoOpDynamoDBFailureHandler());
-        final OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+    /**
+     * Test ensuring that the sink blocks if the queue limit is exceeded, until the queue length
+     * drops below the limit; we set a timeout because the test will not finish if the logic is
+     * broken.
+     */
+    @Test(timeout = 10000)
+    public void testBackpressure() throws Throwable {
+        final Deadline deadline = Deadline.fromNow(Duration.ofSeconds(10));
+
+        final DummyFlinkDynamoDBSink sink =
+                new DummyFlinkDynamoDBSink(
+                        new DummyFlinkDynamoDBClientBuilder(),
+                        DynamoDBSinkConfig.builder()
+                                .queueLimit(1)
+                                .build(),
+                        null
+                );
+
+        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
-
         testHarness.open();
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("table", WriteRequest.builder().build())));
-        Assert.assertEquals(1, sink.getNumPendingRecords());
-        CheckedThread snapshotThread = new CheckedThread() {
-            @Override
-            public void go() throws Exception {
-                testHarness.snapshot(123L, 123L);
-            }
-        };
-        snapshotThread.start();
 
-        sink.setBatchResponse(BatchResponse.success(1));
-        sink.manualBatch();
-        Assert.assertEquals(0, sink.getNumPendingRecords());
+        BatchResponse batchResponse = new BatchResponse(1, 1, true, null);
 
+        CheckedThread msg1 =
+                new CheckedThread() {
+                    @Override
+                    public void go() throws Exception {
+                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                                WriteRequest.builder().build())));
+                    }
+                };
+        msg1.start();
+        msg1.trySync(deadline.timeLeftIfAny().toMillis());
+        assertFalse("Flush triggered before reaching queue limit", msg1.isAlive());
+
+        // consume msg-1 so that queue is empty again
+        sink.getPendingRecordFutures().get(0).set(batchResponse);
+
+        CheckedThread msg2 =
+                new CheckedThread() {
+                    @Override
+                    public void go() throws Exception {
+                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                                WriteRequest.builder().build())));
+                    }
+                };
+        msg2.start();
+        msg2.trySync(deadline.timeLeftIfAny().toMillis());
+        assertFalse("Flush triggered before reaching queue limit", msg2.isAlive());
+
+        CheckedThread moreElementsThread =
+                new CheckedThread() {
+                    @Override
+                    public void go() throws Exception {
+                        // this should block until msg-2 is consumed
+                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                                WriteRequest.builder().build())));
+                        // this should block until msg-3 is consumed
+                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
+                                WriteRequest.builder().build())));
+                    }
+                };
+        moreElementsThread.start();
+
+        assertTrue("Producer should still block, but doesn't", moreElementsThread.isAlive());
+
+        // consume msg-2 from the queue, leaving msg-3 in the queue and msg-4 blocked
+        while (sink.getPendingRecordFutures().size() < 2) {
+            Thread.sleep(50);
+        }
+        sink.getPendingRecordFutures().get(1).set(batchResponse);
+
+        assertTrue("Producer should still block, but doesn't", moreElementsThread.isAlive());
+
+        // consume msg-3, blocked msg-4 can be inserted into the queue and block is released
+        while (sink.getPendingRecordFutures().size() < 3) {
+            Thread.sleep(50);
+        }
+        sink.getPendingRecordFutures().get(2).set(batchResponse);
+
+        moreElementsThread.trySync(deadline.timeLeftIfAny().toMillis());
+
+        assertFalse(
+                "Prodcuer still blocks although the queue is flushed",
+                moreElementsThread.isAlive());
+
+        sink.getPendingRecordFutures().get(3).set(batchResponse);
+
+        testHarness.close();
     }
 
     private static class DummyFlinkDynamoDBSink extends FlinkDynamoDBSink {
 
-        private BatchResponse batchResponse;
-        private DynamoDBBatchProcessor dynamoDBBatchProcessor;
-        private BatchRequest batchRequest;
+        private static final long serialVersionUID = -1212425318784651817L;
 
-        private transient MultiShotLatch flushLatch = new MultiShotLatch();
+        private transient DynamoDBProducer mockProducer;
+        private List<SettableFuture<BatchResponse>> pendingRecordFutures = new LinkedList<>();
 
-        public DummyFlinkDynamoDBSink(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
-                                      DynamoDBSinkConfig dynamoDBSinkConfig,
-                                      DynamoDBFailureHandler failureHandler) {
-            super(flinkDynamoDBClientBuilder, dynamoDBSinkConfig, failureHandler);
+        private transient MultiShotLatch flushLatch;
+
+        DummyFlinkDynamoDBSink(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
+                               DynamoDBSinkConfig dynamoDBSinkConfig,
+                               KeySelector<DynamoDBWriteRequest, String> keySelector) {
+            super(flinkDynamoDBClientBuilder, dynamoDBSinkConfig, keySelector);
+
+            // set up mock producer
+            this.mockProducer = new DummyDynamoDBProducer(flinkDynamoDBClientBuilder,
+                    keySelector,
+                    dynamoDBSinkConfig.getBatchSize());
+
+            this.flushLatch = new MultiShotLatch();
         }
 
-        public void setBatchResponse(BatchResponse batchResponse) {
-            this.batchResponse = batchResponse;
+        private class DummyDynamoDBProducer extends DynamoDBProducer {
+
+            public DummyDynamoDBProducer(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
+                                         KeySelector<DynamoDBWriteRequest, String> keySelector,
+                                         int batchSize) {
+                super(flinkDynamoDBClientBuilder, keySelector, batchSize);
+            }
+
+            @Override
+            public int getOutstandingRecordsCount() {
+                return getNumPendingRecordFutures();
+            }
+
+            @Override
+            public ListenableFuture<BatchResponse> add(DynamoDBWriteRequest dynamoDBWriteRequest) {
+                SettableFuture<BatchResponse> future =
+                        SettableFuture.create();
+                pendingRecordFutures.add(future);
+                return future;
+            }
+
+            public void flush() {
+                flushLatch.trigger();
+            }
         }
 
-        public void manualBatch() {
-            flushLatch.trigger();
-            dynamoDBBatchProcessor.flush();
+
+        @Override
+        protected DynamoDBProducer getDynamoDBProducer() {
+            return mockProducer;
         }
 
         @Override
-        protected DynamoDBBatchProcessor buildDynamoDBBatchProcessor(DynamoDBBatchProcessor.Listener listener) {
-            this.dynamoDBBatchProcessor = new DynamoDBBatchProcessor(new DummyFlinkDynamoDBClientBuilder(), 0, 0, null) {
+        public void snapshotState(FunctionSnapshotContext context) throws Exception {
 
-                @Override
-                public void add(final DynamoDBWriteRequest dynamoDBWriteRequest) {
-                    if (batchRequest == null) {
-                        batchRequest = new BatchRequest(Collections.singletonMap(dynamoDBWriteRequest.getTableName(),
-                                Collections.singletonList(dynamoDBWriteRequest.getWriteRequest())), 1);
-                    } else {
-                        batchRequest.getBatch().get(dynamoDBWriteRequest.getTableName()).add(dynamoDBWriteRequest.getWriteRequest());
-                    }
-                }
+            super.snapshotState(context);
 
-                @Override
-                public void flush() {
-                    try {
-                        flushLatch.await();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                    if (batchResponse.getT() != null) {
-                        listener.onFailure(batchResponse.getT());
-                    } else {
-                        listener.onSuccess(batchResponse);
-                    }
+            // if the snapshot implementation doesn't wait until all pending records are flushed, we
+            // should fail the test
+            if (mockProducer.getOutstandingRecordsCount() > 0) {
+                throw new RuntimeException(
+                        "Flushing is enabled; snapshots should be blocked until all pending records are flushed");
+            }
+        }
+
+        List<SettableFuture<BatchResponse>> getPendingRecordFutures() {
+            return pendingRecordFutures;
+        }
+
+        void waitUntilFlushStarted() throws Exception {
+            flushLatch.await();
+        }
+
+        private int getNumPendingRecordFutures() {
+            int numPending = 0;
+
+            for (SettableFuture<BatchResponse> future : pendingRecordFutures) {
+                if (!future.isDone()) {
+                    numPending++;
                 }
-            };
-            return this.dynamoDBBatchProcessor;
+            }
+
+            return numPending;
         }
     }
 
