@@ -90,8 +90,8 @@ public class DynamoDBProducerTest {
         //call flush
         producer.flush();
         //no map in the queue
-        assertEquals(1, producer.getQueue().size());
         f.get(1000, TimeUnit.MILLISECONDS);
+        assertEquals(0, producer.getQueue().size());
         assertTrue(f.isDone());
         producer.destroy();
     }
