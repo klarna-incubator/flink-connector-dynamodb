@@ -107,6 +107,20 @@ public class FlinkDynamoDBSink<IN> extends RichSinkFunction<IN> implements Check
         this.tableName = tableName;
     }
 
+    /**
+     *
+     * @param flinkDynamoDBClientBuilder
+     * @param tableName
+     * @param dynamoDBSinkConfig
+     * @param mapper
+     */
+    public FlinkDynamoDBSink(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
+                             final String tableName,
+                             final DynamoDBSinkConfig dynamoDBSinkConfig,
+                             final DynamoDBSinkWriteRequestMapper<IN> mapper) {
+        this(flinkDynamoDBClientBuilder, tableName, dynamoDBSinkConfig, mapper, null);
+    }
+
     @Override
     public void invoke(IN value, Context context) throws Exception {
         if (producer == null) {

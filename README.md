@@ -1,5 +1,5 @@
 # Flink Connector DynamoDB
-> Java library provides [Apache Flink](https://flink.apache.org/) connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database that can be used with Flink 1.11.3 runtime version.
+> Java library provides [Apache Flink](https://flink.apache.org/) connector sink for [AWS DynamoDB](https://aws.amazon.com/dynamodb) database that can be used with Flink 1.11.1 runtime version.
 
 [![Build Status][ci-image]][ci-url]
 [![License][license-image]][license-url]
@@ -10,13 +10,6 @@ At Klarna we use streaming applications extensively. Amazon Kinesis Data Analyti
 ## Usage example
 
 ```java
-import com.klarna.flink.connectors.dynamodb.FlinkDynamoDBClientBuilder;
-import com.klarna.flink.connectors.dynamodb.dynamodb.DynamoDBSinkBaseConfig;
-import com.klarna.flink.connectors.dynamodb.dynamodb.DynamoDBSinkPut;
-import com.klarna.flink.connectors.dynamodb.NoOpDynamoDBFailureHandler;
-import software.amazon.awssdk.regions.Region;
-
-...
 
 final FlinkDynamoDBClientBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     @Override
@@ -25,14 +18,23 @@ final FlinkDynamoDBClientBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     }
 };
 
+final DynamoDBSinkWriteRequestMapper<String> mapper = new DynamoDBSinkWriteRequestMapper<>() {
+    @Override
+    public WriteRequest map(String in) {
+        return WriteRequest.builder().putRequest(PutRequest.builder().build());
+    }
+};
+
 final DynamoDBSinkConfig dynamoDBSinkConfig = DynamoDBSinkBaseConfig.builder()
-    .maxConcurrentRequests(20)
+    .batchSize(25)
+    .queueLimit(10)
     .build();
 
-final FlinkDynamoDBSink dynamoDbSink = new FlinkDynamoDBSink<>(
+final FlinkDynamoDBSink<String> dynamoDbSink = new FlinkDynamoDBSink<>(
         dynamoDBBuilder,
+        "table_name"
         dynamoDBSinkConfig,
-        new NoOpDynamoDBFailureHandler()
+        mapper
 );
 
 env.addSource(createKafkaConsumer())
