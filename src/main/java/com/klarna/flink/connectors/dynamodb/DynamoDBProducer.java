@@ -89,7 +89,7 @@ public class DynamoDBProducer {
     private Set<String> seenKeys = new HashSet<>();
 
     /** used to deduplicate messages by key - get a string key from the current {@link DynamoDBWriteRequest} */
-    private KeySelector<DynamoDBWriteRequest, String> keySelector;
+    private KeySelector<WriteRequest, String> keySelector;
 
     /** map key is batchId and the value is the outgoing batch */
     private final Map<Long, SettableFuture<BatchResponse>> futures = new ConcurrentHashMap<>();
@@ -98,7 +98,7 @@ public class DynamoDBProducer {
     private final BlockingQueue<BatchRequest> queue = new LinkedBlockingQueue<>();
 
     public DynamoDBProducer(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
-                            final KeySelector<DynamoDBWriteRequest, String> keySelector,
+                            final KeySelector<WriteRequest, String> keySelector,
                             final int batchSize) {
         Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "flinkDynamoDBClientBuilder must not be null");
         taskExecutor = new ThreadPoolExecutor(corePoolSize, corePoolSize, 1000, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
@@ -176,7 +176,7 @@ public class DynamoDBProducer {
     public ListenableFuture<BatchResponse> add(final DynamoDBWriteRequest dynamoDBWriteRequest) {
         if (keySelector != null) {
             try {
-                String key = keySelector.getKey(dynamoDBWriteRequest);
+                String key = keySelector.getKey(dynamoDBWriteRequest.getWriteRequest());
                 if (seenKeys.contains(key)) {
                     promoteBatch();
                 } else {

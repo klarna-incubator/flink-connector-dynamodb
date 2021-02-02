@@ -99,7 +99,7 @@ public class DynamoDBProducerTest {
     private static class DummyDynamoDBProducer extends DynamoDBProducer {
 
         public DummyDynamoDBProducer(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
-                                     KeySelector<DynamoDBWriteRequest, String> keySelector,
+                                     KeySelector<WriteRequest, String> keySelector,
                                      int batchSize) {
             super(flinkDynamoDBClientBuilder, keySelector, batchSize);
         }

@@ -27,6 +27,8 @@ import java.io.Serializable;
  */
 public class DynamoDBSinkConfig implements Serializable {
 
+    private static final long serialVersionUID = 1L;
+
     /**
      * The default maximum number of concurrent requests. By default, 25.
      */
