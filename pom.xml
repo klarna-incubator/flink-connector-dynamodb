@@ -6,7 +6,7 @@
     <modelVersion>4.0.0</modelVersion>
     <packaging>jar</packaging>
     <groupId>com.klarna</groupId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <artifactId>flink-connector-dynamodb</artifactId>
 
     <licenses>
