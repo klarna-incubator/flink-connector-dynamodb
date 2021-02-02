@@ -35,14 +35,15 @@ import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
-public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> implements CheckpointedFunction {
+public class FlinkDynamoDBSink<IN> extends RichSinkFunction<IN> implements CheckpointedFunction {
+
+    private static final long serialVersionUID = 1L;
 
     public static final String DYNAMO_DB_SINK_METRIC_GROUP = "dynamoDBSink";
 
     public static final String METRIC_BACKPRESSURE_CYCLES = "backpressureCycles";
-
-    private static final long serialVersionUID = 1L;
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkDynamoDBSink.class);
 
@@ -74,28 +75,40 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
     private long queueLimit;
 
     /** key selector passed to the producer to deduplicate by keys */
-    private KeySelector<DynamoDBWriteRequest, String> keySelector;
+    private KeySelector<WriteRequest, String> keySelector;
+
+    private final DynamoDBSinkWriteRequestMapper<IN> mapper;
+
+    private final String tableName;
 
     /**
-     * Constructor of FlinkDynamoDBSink
-     * @param flinkDynamoDBClientBuilder builder for dynamo db client
-     * @param dynamoDBSinkConfig configuration for dynamo db sink
-     * @param keySelector key used to deduplicate records
+     *
+     * @param flinkDynamoDBClientBuilder
+     * @param tableName
+     * @param dynamoDBSinkConfig
+     * @param mapper
+     * @param keySelector
      */
     public FlinkDynamoDBSink(final FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
+                             final String tableName,
                              final DynamoDBSinkConfig dynamoDBSinkConfig,
-                             final KeySelector<DynamoDBWriteRequest, String> keySelector) {
+                             final DynamoDBSinkWriteRequestMapper<IN> mapper,
+                             final KeySelector<WriteRequest, String> keySelector) {
         Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "amazonDynamoDBBuilder must not be null");
         Preconditions.checkNotNull(dynamoDBSinkConfig, "DynamoDBSinkConfig must not be null");
+        Preconditions.checkNotNull(mapper, "mapper must not be null");
+        Preconditions.checkNotNull(tableName, "tableName must not be null");
         this.failOnError = dynamoDBSinkConfig.isFailOnError();
         this.dynamoDBSinkConfig = dynamoDBSinkConfig;
         this.flinkDynamoDBClientBuilder = flinkDynamoDBClientBuilder;
         this.queueLimit = dynamoDBSinkConfig.getQueueLimit();
         this.keySelector = keySelector;
+        this.mapper = mapper;
+        this.tableName = tableName;
     }
 
     @Override
-    public void invoke(DynamoDBWriteRequest value, Context context) throws Exception {
+    public void invoke(IN value, Context context) throws Exception {
         if (producer == null) {
             throw new NullPointerException("DynamoDB batch processor is closed");
         }
@@ -104,7 +117,8 @@ public class FlinkDynamoDBSink extends RichSinkFunction<DynamoDBWriteRequest> im
         if (didWaitForFlush) {
             checkAsyncErrors();
         }
-        ListenableFuture<BatchResponse> add = producer.add(value);
+        WriteRequest writeRequest = mapper.map(value);
+        ListenableFuture<BatchResponse> add = producer.add(new DynamoDBWriteRequest(tableName, writeRequest));
         Futures.addCallback(add, callback, MoreExecutors.directExecutor());
     }
 

@@ -46,10 +46,12 @@ public class FlinkDynamoDBSinkTest {
 
     @Test
     public void testSinkIsSerializable() {
-        final FlinkDynamoDBSink sink =
-                new FlinkDynamoDBSink(
+        final FlinkDynamoDBSink<String> sink =
+                new FlinkDynamoDBSink<>(
                         new DummyFlinkDynamoDBClientBuilder(),
+                        "table",
                         DynamoDBSinkConfig.builder().build(),
+                        new DummyDynamoDBWriteRequestMapper(),
                         null
                 );
         assertTrue(InstantiationUtil.isSerializable(sink));
@@ -67,21 +69,19 @@ public class FlinkDynamoDBSinkTest {
                         null
                 );
 
-        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+        OneInputStreamOperatorTestHarness<String, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
         testHarness.open();
 
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>("1"));
 
         sink.getPendingRecordFutures()
                 .get(0)
                 .setException(new Exception("artificial async exception"));
 
         try {
-            testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                    WriteRequest.builder().build())));
+            testHarness.processElement(new StreamRecord<>("2"));
         } catch (Exception e) {
             // the next invoke should rethrow the async exception
             Assert.assertTrue(
@@ -108,14 +108,13 @@ public class FlinkDynamoDBSinkTest {
                         null
                 );
 
-        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+        OneInputStreamOperatorTestHarness<String, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
 
 
         testHarness.open();
 
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>("1"));
 
         sink.getPendingRecordFutures()
                 .get(0)
@@ -154,16 +153,13 @@ public class FlinkDynamoDBSinkTest {
                         null
                 );
 
-        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+        OneInputStreamOperatorTestHarness<String, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
         testHarness.open();
 
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>("1"));
+        testHarness.processElement(new StreamRecord<>("2"));
+        testHarness.processElement(new StreamRecord<>("3"));
 
         // only let the first record succeed for now
         BatchResponse batchResponse = new BatchResponse(1, 1, true, null);
@@ -215,16 +211,13 @@ public class FlinkDynamoDBSinkTest {
                         null
                 );
 
-        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+        OneInputStreamOperatorTestHarness<String, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
         testHarness.open();
 
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
-        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                WriteRequest.builder().build())));
+        testHarness.processElement(new StreamRecord<>("1"));
+        testHarness.processElement(new StreamRecord<>("2"));
+        testHarness.processElement(new StreamRecord<>("3"));
 
         // start a thread to perform checkpointing
         CheckedThread snapshotThread =
@@ -284,7 +277,7 @@ public class FlinkDynamoDBSinkTest {
                         null
                 );
 
-        OneInputStreamOperatorTestHarness<DynamoDBWriteRequest, Object> testHarness =
+        OneInputStreamOperatorTestHarness<String, Object> testHarness =
                 new OneInputStreamOperatorTestHarness<>(new StreamSink<>(sink));
         testHarness.open();
 
@@ -294,8 +287,7 @@ public class FlinkDynamoDBSinkTest {
                 new CheckedThread() {
                     @Override
                     public void go() throws Exception {
-                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                                WriteRequest.builder().build())));
+                        testHarness.processElement(new StreamRecord<>("1"));
                     }
                 };
         msg1.start();
@@ -309,8 +301,7 @@ public class FlinkDynamoDBSinkTest {
                 new CheckedThread() {
                     @Override
                     public void go() throws Exception {
-                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                                WriteRequest.builder().build())));
+                        testHarness.processElement(new StreamRecord<>("2"));
                     }
                 };
         msg2.start();
@@ -321,12 +312,8 @@ public class FlinkDynamoDBSinkTest {
                 new CheckedThread() {
                     @Override
                     public void go() throws Exception {
-                        // this should block until msg-2 is consumed
-                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                                WriteRequest.builder().build())));
-                        // this should block until msg-3 is consumed
-                        testHarness.processElement(new StreamRecord<>(new DynamoDBWriteRequest("tbl",
-                                WriteRequest.builder().build())));
+                        testHarness.processElement(new StreamRecord<>("3"));
+                        testHarness.processElement(new StreamRecord<>("4"));
                     }
                 };
         moreElementsThread.start();
@@ -358,7 +345,7 @@ public class FlinkDynamoDBSinkTest {
         testHarness.close();
     }
 
-    private static class DummyFlinkDynamoDBSink extends FlinkDynamoDBSink {
+    private static class DummyFlinkDynamoDBSink extends FlinkDynamoDBSink<String> {
 
         private static final long serialVersionUID = -1212425318784651817L;
 
@@ -369,8 +356,12 @@ public class FlinkDynamoDBSinkTest {
 
         DummyFlinkDynamoDBSink(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
                                DynamoDBSinkConfig dynamoDBSinkConfig,
-                               KeySelector<DynamoDBWriteRequest, String> keySelector) {
-            super(flinkDynamoDBClientBuilder, dynamoDBSinkConfig, keySelector);
+                               KeySelector<WriteRequest, String> keySelector) {
+            super(flinkDynamoDBClientBuilder,
+                    "tableName",
+                    dynamoDBSinkConfig,
+                    new DummyDynamoDBWriteRequestMapper(),
+                    keySelector);
 
             // set up mock producer
             this.mockProducer = new DummyDynamoDBProducer(flinkDynamoDBClientBuilder,
@@ -383,7 +374,7 @@ public class FlinkDynamoDBSinkTest {
         private class DummyDynamoDBProducer extends DynamoDBProducer {
 
             public DummyDynamoDBProducer(FlinkDynamoDBClientBuilder flinkDynamoDBClientBuilder,
-                                         KeySelector<DynamoDBWriteRequest, String> keySelector,
+                                         KeySelector<WriteRequest, String> keySelector,
                                          int batchSize) {
                 super(flinkDynamoDBClientBuilder, keySelector, batchSize);
             }
@@ -443,6 +434,14 @@ public class FlinkDynamoDBSinkTest {
             }
 
             return numPending;
+        }
+    }
+
+    private static class DummyDynamoDBWriteRequestMapper implements DynamoDBSinkWriteRequestMapper<String> {
+
+        @Override
+        public WriteRequest map(String s) {
+            return WriteRequest.builder().build();
         }
     }
 
