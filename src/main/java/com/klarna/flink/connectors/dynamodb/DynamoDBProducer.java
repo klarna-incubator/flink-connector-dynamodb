@@ -265,8 +265,11 @@ public class DynamoDBProducer {
                 }
                 retries++;
             }
-            if (retry && t != null) {
-                return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, t);
+            if (retry) {
+                if (t != null) {
+                    return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, t);
+                }
+                return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, new RuntimeException("Max retries reached"));
             }
             return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), true, null);
         };
