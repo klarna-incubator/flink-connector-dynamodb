@@ -4,10 +4,13 @@ import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.junit.Test;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.PutRequest;
 import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -93,6 +96,58 @@ public class DynamoDBProducerTest {
         f.get(1000, TimeUnit.MILLISECONDS);
         assertEquals(0, producer.getQueue().size());
         assertTrue(f.isDone());
+        producer.destroy();
+    }
+
+    @Test
+    public void testWithKeySelector() {
+        DummyDynamoDBProducer producer =
+                new DummyDynamoDBProducer(new DummyFlinkDynamoDBClientBuilder(),
+                        (KeySelector<WriteRequest, String>) value -> value.putRequest().item().get("key").s(),
+                        25);
+        ListenableFuture<BatchResponse> f;
+        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+                .putRequest(PutRequest.builder()
+                        .item(Map.of("key", AttributeValue.builder()
+                                .s("1")
+                                .build()))
+                        .build())
+                .build()));
+        assertEquals(1, producer.getUnderConstruction().get("YY").size());
+        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+                .putRequest(PutRequest.builder()
+                        .item(Map.of("key", AttributeValue.builder()
+                                .s("1")
+                                .build()))
+                        .build())
+                .build()));
+        assertEquals(1, producer.getUnderConstruction().get("YY").size());
+        producer.destroy();
+    }
+
+    @Test
+    public void testWithKeySelectowr() {
+        DummyDynamoDBProducer producer =
+                new DummyDynamoDBProducer(new DummyFlinkDynamoDBClientBuilder(),
+                        (KeySelector<WriteRequest, String>) value -> value.putRequest().item().get("key").s(),
+                        25);
+        ListenableFuture<BatchResponse> f;
+        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+                .putRequest(PutRequest.builder()
+                        .item(Map.of("key", AttributeValue.builder()
+                                .s("1")
+                                .build()))
+                        .build())
+                .build()));
+        assertEquals(1, producer.getUnderConstruction().get("YY").size());
+        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+                .putRequest(PutRequest.builder()
+                        .item(Map.of("key", AttributeValue.builder()
+                                .s("2")
+                                .build()))
+                        .build())
+                .build()));
+        assertEquals(2, producer.getUnderConstruction().get("YY").size());
         producer.destroy();
     }
 
