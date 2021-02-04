@@ -131,7 +131,7 @@ public class DynamoDBProducer {
                     if (batchResponse.isSuccessful()) {
                         f.set(batchResponse);
                     } else {
-                        f.setException(new RuntimeException("Failed to execute batch"));
+                        f.setException(new RuntimeException("Failed to execute batch", batchResponse.getThrowable()));
                     }
                 } catch (InterruptedException | ExecutionException e) {
                     fatalError("Failed to retrieve future from completion service", e);
