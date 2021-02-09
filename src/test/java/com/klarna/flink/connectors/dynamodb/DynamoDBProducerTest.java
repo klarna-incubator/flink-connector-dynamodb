@@ -100,54 +100,36 @@ public class DynamoDBProducerTest {
     }
 
     @Test
-    public void testWithKeySelector() {
+    public void whenUsingKeySelectorShouldDeduplicateItemsInBatchByKey() {
         DummyDynamoDBProducer producer =
                 new DummyDynamoDBProducer(new DummyFlinkDynamoDBClientBuilder(),
                         (KeySelector<WriteRequest, String>) value -> value.putRequest().item().get("key").s(),
                         25);
-        ListenableFuture<BatchResponse> f;
-        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+        ListenableFuture<BatchResponse> f0 = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
                 .putRequest(PutRequest.builder()
                         .item(Map.of("key", AttributeValue.builder()
-                                .s("1")
+                                .s("0")
                                 .build()))
                         .build())
                 .build()));
-        assertEquals(1, producer.getUnderConstruction().get("YY").size());
-        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+        ListenableFuture<BatchResponse> f1 = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
                 .putRequest(PutRequest.builder()
                         .item(Map.of("key", AttributeValue.builder()
                                 .s("1")
-                                .build()))
-                        .build())
-                .build()));
-        assertEquals(1, producer.getUnderConstruction().get("YY").size());
-        producer.destroy();
-    }
-
-    @Test
-    public void testWithKeySelectowr() {
-        DummyDynamoDBProducer producer =
-                new DummyDynamoDBProducer(new DummyFlinkDynamoDBClientBuilder(),
-                        (KeySelector<WriteRequest, String>) value -> value.putRequest().item().get("key").s(),
-                        25);
-        ListenableFuture<BatchResponse> f;
-        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
-                .putRequest(PutRequest.builder()
-                        .item(Map.of("key", AttributeValue.builder()
-                                .s("1")
-                                .build()))
-                        .build())
-                .build()));
-        assertEquals(1, producer.getUnderConstruction().get("YY").size());
-        f = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
-                .putRequest(PutRequest.builder()
-                        .item(Map.of("key", AttributeValue.builder()
-                                .s("2")
                                 .build()))
                         .build())
                 .build()));
         assertEquals(2, producer.getUnderConstruction().get("YY").size());
+        assertSame(f0, f1);
+        ListenableFuture<BatchResponse> f2 = producer.add(new DynamoDBWriteRequest("YY", WriteRequest.builder()
+                .putRequest(PutRequest.builder()
+                        .item(Map.of("key", AttributeValue.builder()
+                                .s("1")
+                                .build()))
+                        .build())
+                .build()));
+        assertEquals(1, producer.getUnderConstruction().get("YY").size());
+        assertNotSame(f2, f1);
         producer.destroy();
     }
 

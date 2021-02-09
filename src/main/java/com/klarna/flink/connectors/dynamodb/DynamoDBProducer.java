@@ -56,6 +56,10 @@ public class DynamoDBProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(DynamoDBProducer.class);
 
+    private static final int MAX_RETRIES = 200;
+    private static final int MAX_BACKOFF_MILLIS = 2048;
+    private static final int BASE_BACKOFF_MILLIS = 128;
+
     private DynamoDbClient dynamoDbClient;
 
     private static final int corePoolSize = Runtime.getRuntime().availableProcessors() * (1 + 40/2);
@@ -101,9 +105,14 @@ public class DynamoDBProducer {
                             final KeySelector<WriteRequest, String> keySelector,
                             final int batchSize) {
         Preconditions.checkNotNull(flinkDynamoDBClientBuilder, "flinkDynamoDBClientBuilder must not be null");
-        taskExecutor = new ThreadPoolExecutor(corePoolSize, corePoolSize, 1000, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
-        this.batchSize = batchSize;
-        batchUnderProcess = new HashMap<>(batchSize);
+        taskExecutor = new ThreadPoolExecutor(corePoolSize, corePoolSize,
+                1000, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(),
+                new ThreadFactoryBuilder()
+                        .setNameFormat("dynamodb-task-%d")
+                        .setDaemon(true)
+                        .build());        this.batchSize = batchSize;
+        batchUnderProcess = new HashMap<>();
         completionService = new ExecutorCompletionService<>(taskExecutor);
         this.keySelector = keySelector;
         this.dynamoDbClient = flinkDynamoDBClientBuilder.build();
@@ -142,6 +151,7 @@ public class DynamoDBProducer {
 
     private synchronized void fatalError(String message, Throwable t) {
         if (!shutdown.getAndSet(true)) {
+            LOG.error(message, t);
             try {
                 this.taskExecutor.awaitTermination(1, TimeUnit.SECONDS);
                 this.executor.awaitTermination(1, TimeUnit.SECONDS);
@@ -179,9 +189,8 @@ public class DynamoDBProducer {
                 String key = keySelector.getKey(dynamoDBWriteRequest.getWriteRequest());
                 if (seenKeys.contains(key)) {
                     promoteBatch();
-                } else {
-                    seenKeys.add(key);
                 }
+                seenKeys.add(key);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -189,7 +198,7 @@ public class DynamoDBProducer {
         numberOfRecords++;
         String tableName = dynamoDBWriteRequest.getTableName();
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
-                k -> new ArrayList<>());
+                k -> new ArrayList<>(batchSize));
         writeRequests.add(dynamoDBWriteRequest.getWriteRequest());
         long currentBatchNumber = batchId;
         if (numberOfRecords >= batchSize) {
@@ -204,7 +213,7 @@ public class DynamoDBProducer {
         } catch (InterruptedException e) {
             fatalError("Failed to promote batch", e);
         }
-        batchUnderProcess = new HashMap<>(batchSize);
+        batchUnderProcess = new HashMap<>();
         numberOfRecords = 0;
         batchId++;
         seenKeys.clear();
@@ -227,51 +236,51 @@ public class DynamoDBProducer {
                     .requestItems(batchRequest.getBatch())
                     .build();
             boolean retry = false;
-            int retries = 0;
+            int retries = 1;
             Throwable t = null;
-            while (!retry && retries < 3) {
-                t = null;
-                try {
-                    final BatchWriteItemResponse batchWriteItemResponse = dynamoDbClient.batchWriteItem(batchWriteItemRequest);
-                    if (batchWriteItemResponse.hasUnprocessedItems()) {
-                        retry = true;
-                        batchWriteItemRequest = batchWriteItemRequest.toBuilder()
-                                .requestItems(batchWriteItemResponse.unprocessedItems())
-                                .build();
-                    } else {
-                        retry = false;
-                    }
-                } catch (ResourceNotFoundException e) {
-                    throw new IOException("Resource not found while inserting to dynamodb. do not retry", e);
-                } catch (Exception e) {
-                    t = e;
-                    retry = true;
-                }
-                if (retry) {
+            try {
+                do {
+                    t = null;
                     try {
-                        // exponential backoff using jitter
-                        // https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
-                        long jitter = ThreadLocalRandom.current()
-                                .nextLong(0, (long) Math.pow(2, retries) * 100);
-                        Thread.sleep(jitter);
-                    } catch (InterruptedException e) {
-                        interrupted = true;
-                        return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, e);
-                    } finally {
-                        if (interrupted) {
-                            Thread.currentThread().interrupt();
+                        final BatchWriteItemResponse batchWriteItemResponse = dynamoDbClient.batchWriteItem(batchWriteItemRequest);
+                        if (batchWriteItemResponse.hasUnprocessedItems()) {
+                            retry = true;
+                            batchWriteItemRequest = BatchWriteItemRequest.builder()
+                                    .requestItems(batchWriteItemResponse.unprocessedItems())
+                                    .build();
+                            try {
+                                // exponential backoff using jitter
+                                // https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
+                                int jitter = ThreadLocalRandom.current()
+                                        .nextInt(0, Math.min(MAX_BACKOFF_MILLIS, BASE_BACKOFF_MILLIS * 2 * retries));
+                                Thread.sleep(jitter);
+                            } catch (InterruptedException e) {
+                                interrupted = true;
+                            }
+                        } else {
+                            retry = false;
                         }
+                    } catch (ResourceNotFoundException e) {
+                        throw new IOException("Resource not found while inserting to dynamodb. do not retry", e);
+                    } catch (Exception e) {
+                        t = e;
+                        retry = true;
                     }
+                    retries++;
+                } while (retry && retries <= MAX_RETRIES);
+                if (retry) {
+                    if (t != null) {
+                        return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, t);
+                    }
+                    return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, new RuntimeException("Max retries reached"));
                 }
-                retries++;
-            }
-            if (retry) {
-                if (t != null) {
-                    return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, t);
+                return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), true, null);
+            } finally {
+                if (interrupted) {
+                    LOG.error("interrupted");
+                    Thread.currentThread().interrupt();
                 }
-                return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), false, new RuntimeException("Max retries reached"));
             }
-            return new BatchResponse(batchRequest.getbatchId(), batchRequest.getBatchSize(), true, null);
         };
 
     }

@@ -142,54 +142,50 @@ public class FlinkDynamoDBSink<IN> extends RichSinkFunction<IN> implements Check
         final MetricGroup dynamoDBSinkMetricGroup =
                 getRuntimeContext().getMetricGroup().addGroup(DYNAMO_DB_SINK_METRIC_GROUP);
         this.backpressureCycles = dynamoDBSinkMetricGroup.counter(METRIC_BACKPRESSURE_CYCLES);
-        callback =
-                new FutureCallback<>() {
-                    @Override
-                    public void onSuccess(BatchResponse result) {
-                        backpressureLatch.trigger();
-                        if (!result.isSuccessful()) {
-                            if (failOnError) {
-                                // only remember the first thrown exception
-                                if (thrownException == null) {
-                                    thrownException =
-                                            new RuntimeException("Record was not sent successful");
-                                }
-                            } else {
-                                LOG.warn("Record was not sent successful");
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void onFailure(Throwable t) {
-                        backpressureLatch.trigger();
+        callback = new FutureCallback<>() {
+                @Override
+                public void onSuccess(BatchResponse result) {
+                    backpressureLatch.trigger();
+                    if (!result.isSuccessful()) {
                         if (failOnError) {
-                            thrownException = t;
+                            // only remember the first thrown exception
+                            if (thrownException == null) {
+                                thrownException =
+                                        new RuntimeException("Batch insert failed");
+                            }
                         } else {
-                            LOG.warn("An exception occurred while processing a record", t);
+                            LOG.warn("Batch insert failed");
                         }
                     }
-                };
+                }
+
+                @Override
+                public void onFailure(Throwable t) {
+                    backpressureLatch.trigger();
+                    if (failOnError) {
+                        thrownException = t;
+                    } else {
+                        LOG.warn("An exception occurred while processing a batch", t);
+                    }
+                }
+            };
         this.producer = getDynamoDBProducer();
     }
 
     @Override
     public void close() throws Exception {
-        try {
-            LOG.info("Closing sink");
-            super.close();
+        LOG.info("Closing sink");
+        super.close();
+        if (producer != null) {
+            LOG.info("Flushing outstanding {} records", producer.getOutstandingRecordsCount());
+            // try to flush all outstanding records
             flushSync();
-            checkAsyncErrors();
-        } finally {
-            try {
-                if (producer != null) {
-                    producer.destroy();
-                    producer = null;
-                }
-            } catch (Exception e) {
-                LOG.warn("Error while closing DynamoDBProducer", e);
-            }
+
+            LOG.info("Flushing done. Destroying producer instance.");
+            producer.destroy();
+            producer = null;
         }
+        checkAsyncErrors();
     }
 
     @Override
