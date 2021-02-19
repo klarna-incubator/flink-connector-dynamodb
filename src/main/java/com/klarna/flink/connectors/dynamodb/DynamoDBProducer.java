@@ -21,7 +21,6 @@ package com.klarna.flink.connectors.dynamodb;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.util.Preconditions;
@@ -51,7 +50,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * This class is not synchronized. It is recommended to create separate format instances for each thread.
  * Concurrent access to this class from multiple threads must be synchronized externally.
  */
-@Internal
 public class DynamoDBProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(DynamoDBProducer.class);
@@ -200,11 +198,11 @@ public class DynamoDBProducer {
         final List<WriteRequest> writeRequests = batchUnderProcess.computeIfAbsent(tableName,
                 k -> new ArrayList<>(batchSize));
         writeRequests.add(dynamoDBWriteRequest.getWriteRequest());
-        long currentBatchNumber = batchId;
+        ListenableFuture<BatchResponse> listenableFuture = futures.computeIfAbsent(batchId, k -> SettableFuture.create());
         if (numberOfRecords >= batchSize) {
             promoteBatch();
         }
-        return futures.computeIfAbsent(currentBatchNumber, k -> SettableFuture.create());
+        return listenableFuture;
     }
 
     private void promoteBatch() {

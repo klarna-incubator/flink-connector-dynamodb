@@ -45,6 +45,8 @@ public class FlinkDynamoDBSink<IN> extends RichSinkFunction<IN> implements Check
 
     public static final String METRIC_BACKPRESSURE_CYCLES = "backpressureCycles";
 
+    public static final String METRIC_OUTSTANDING_RECORDS_COUNT = "outstandingRecordsCount";
+
     private static final Logger LOG = LoggerFactory.getLogger(FlinkDynamoDBSink.class);
 
     /** Batch processor to buffer and send requests to DynamoDB */
@@ -139,37 +141,40 @@ public class FlinkDynamoDBSink<IN> extends RichSinkFunction<IN> implements Check
     @Override
     public void open(Configuration parameters) {
         backpressureLatch = new TimeoutLatch();
+        this.producer = getDynamoDBProducer();
         final MetricGroup dynamoDBSinkMetricGroup =
                 getRuntimeContext().getMetricGroup().addGroup(DYNAMO_DB_SINK_METRIC_GROUP);
         this.backpressureCycles = dynamoDBSinkMetricGroup.counter(METRIC_BACKPRESSURE_CYCLES);
+        dynamoDBSinkMetricGroup.gauge(
+                METRIC_OUTSTANDING_RECORDS_COUNT, producer::getOutstandingRecordsCount);
         callback = new FutureCallback<>() {
-                @Override
-                public void onSuccess(BatchResponse result) {
-                    backpressureLatch.trigger();
-                    if (!result.isSuccessful()) {
-                        if (failOnError) {
-                            // only remember the first thrown exception
-                            if (thrownException == null) {
-                                thrownException =
-                                        new RuntimeException("Batch insert failed");
-                            }
-                        } else {
-                            LOG.warn("Batch insert failed");
-                        }
-                    }
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    backpressureLatch.trigger();
+            @Override
+            public void onSuccess(BatchResponse result) {
+                backpressureLatch.trigger();
+                if (!result.isSuccessful()) {
                     if (failOnError) {
-                        thrownException = t;
+                        // only remember the first thrown exception
+                        if (thrownException == null) {
+                            thrownException =
+                                    new RuntimeException("Batch insert failed");
+                        }
                     } else {
-                        LOG.warn("An exception occurred while processing a batch", t);
+                        LOG.warn("Batch insert failed");
                     }
                 }
-            };
-        this.producer = getDynamoDBProducer();
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                backpressureLatch.trigger();
+                if (failOnError) {
+                    thrownException = t;
+                } else {
+                    LOG.warn("An exception occurred while processing a batch", t);
+                }
+            }
+        };
+        LOG.info("Started Flink DynamoDB sink");
     }
 
     @Override
