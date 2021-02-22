@@ -241,7 +241,8 @@ public class DynamoDBProducer {
                     t = null;
                     try {
                         final BatchWriteItemResponse batchWriteItemResponse = dynamoDbClient.batchWriteItem(batchWriteItemRequest);
-                        if (batchWriteItemResponse.hasUnprocessedItems()) {
+                        Map<String, List<WriteRequest>> unprocessedItems = batchWriteItemResponse.unprocessedItems();
+                        if (!unprocessedItems.isEmpty()) {
                             retry = true;
                             batchWriteItemRequest = BatchWriteItemRequest.builder()
                                     .requestItems(batchWriteItemResponse.unprocessedItems())
