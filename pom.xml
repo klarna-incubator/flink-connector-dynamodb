@@ -21,7 +21,7 @@
         <name>klarna</name>
     </organization>
     <description>Java library provides Apache Flink connector sink for AWS DynamoDB database
-        that can be used with Flink 1.11.1 runtime version.</description>
+        that can be used with Flink 1.11.3 runtime version.</description>
     <url>https://github.com/klarna-incubator/flink-connector-dynamodb</url>
     <developers>
         <developer>
@@ -32,16 +32,6 @@
                 <role>developer</role>
             </roles>
             <timezone>Europe/Stockholm</timezone>
-        </developer>
-        <developer>
-            <id>arianrohani</id>
-            <name>Arian Rohani</name>
-            <organization>klarna</organization>
-            <roles>
-                <role>developer</role>
-            </roles>
-            <timezone>Europe/Stockholm</timezone>
-            <email>arianrohani@gmail.com</email>
         </developer>
     </developers>
 
