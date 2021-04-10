@@ -14,18 +14,18 @@ At Klarna we use streaming applications extensively. Amazon Kinesis Data Analyti
 final FlinkDynamoDBClientBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     @Override
     public DynamoDBClient build() {
-        return DynamoDBClient.builder().withRegion(Region.EU_WEST_1).build();
+        return DynamoDBClient.builder().region(Region.EU_WEST_1).build();
     }
 };
 
 final DynamoDBSinkWriteRequestMapper<String> mapper = new DynamoDBSinkWriteRequestMapper<>() {
     @Override
     public WriteRequest map(String in) {
-        return WriteRequest.builder().putRequest(PutRequest.builder().build());
+        return WriteRequest.builder().putRequest(PutRequest.builder().build()).build();
     }
 };
 
-final DynamoDBSinkConfig dynamoDBSinkConfig = DynamoDBSinkBaseConfig.builder()
+final DynamoDBSinkConfig dynamoDBSinkConfig = DynamoDBSinkConfig.builder()
     .batchSize(25)
     .queueLimit(10)
     .build();

@@ -52,12 +52,15 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>11</java.version>
-        <aws.sdk.version>2.15.65</aws.sdk.version>
+        <aws.sdk.version>2.16.39</aws.sdk.version>
+        <aws.v1.sdk.version>1.11.996</aws.v1.sdk.version>
         <scala.binary.version>2.12</scala.binary.version>
         <flink.version>1.11.3</flink.version>
         <junit.jupiter.version>5.6.2</junit.jupiter.version>
-        <guava.version>30.1-jre</guava.version>
+        <guava.version>30.1.1-jre</guava.version>
         <mockito.version>3.1.0</mockito.version>
+        <testcontainers.version>1.15.2</testcontainers.version>
+        <log4j.version>2.14.1</log4j.version>
     </properties>
 
     <build>
@@ -191,6 +194,12 @@
             <artifactId>flink-test-utils_${scala.binary.version}</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -212,5 +221,46 @@
             <version>4.13.1</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>localstack</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- we don't use this explicitly anywhere, but test container have a "provided" dependency on aws sdk v1 :( -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <version>${aws.v1.sdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-1.2-api</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+
     </dependencies>
 </project>
