@@ -92,14 +92,13 @@ public class IntegrationTest {
         LOG.info("Checking stored data in DynamoDB");
         var dynamoClient = new LocalStackDynamoDBClientBuilder(localDynamodbPort()).build();
         inputTestData.forEach(
-                sensorEventData ->
+                expectedEvent ->
                         Assert.assertEquals(
-                                sensorEventData,
+                                expectedEvent,
                                 SensorEventDataDynamoMapping
-                                        .loadFromDynamo(sensorEventData.sensorId, sensorEventData.timestamp, dynamoClient, testDynamoTable)
+                                        .loadFromDynamo(expectedEvent.sensorId, expectedEvent.timestamp, dynamoClient, testDynamoTable)
                         ));
     }
-
 
     @Test
     public void testProduceSomeSimpleItemsInMultipleBatches() throws Exception {
@@ -139,11 +138,11 @@ public class IntegrationTest {
         LOG.info("Checking stored data in DynamoDB");
         var dynamoClient = new LocalStackDynamoDBClientBuilder(localDynamodbPort()).build();
         inputTestData.forEach(
-                sensorEventData ->
+                expectedEvent ->
                         Assert.assertEquals(
-                                sensorEventData,
+                                expectedEvent,
                                 SensorEventDataDynamoMapping
-                                        .loadFromDynamo(sensorEventData.sensorId, sensorEventData.timestamp, dynamoClient, testDynamoTable)
+                                        .loadFromDynamo(expectedEvent.sensorId, expectedEvent.timestamp, dynamoClient, testDynamoTable)
                         ));
     }
 
