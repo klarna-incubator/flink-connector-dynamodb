@@ -62,6 +62,15 @@ implementation com.klarna:flink-connector-dynamodb:1.0.0
 
 See our guide on [contributing](.github/CONTRIBUTING.md).
 
+## How to run the test
+
+Due to the presence of a log4j configuration bundled in a library dependency, unit test execution
+requires the following flag in order to display the logs:
+
+```sh
+mvn test -Dlog4j.configurationFile=log4j2.xml
+```
+
 ## Release History
 
 See our [changelog](CHANGELOG.md).
