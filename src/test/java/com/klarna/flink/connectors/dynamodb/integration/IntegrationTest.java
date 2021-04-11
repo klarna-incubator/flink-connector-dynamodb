@@ -4,6 +4,7 @@ import com.klarna.flink.connectors.dynamodb.DynamoDBSinkConfig;
 import com.klarna.flink.connectors.dynamodb.FlinkDynamoDBSink;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.junit.*;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -15,7 +16,7 @@ import static org.testcontainers.containers.localstack.LocalStackContainer.Servi
 
 public class IntegrationTest {
 
-    private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(IntegrationTest.class);
+    private static final Logger LOG = LoggerFactory.getLogger(IntegrationTest.class);
 
     private static final String testDynamoTable = "test-table";
 
@@ -81,8 +82,7 @@ public class IntegrationTest {
                         .batchSize(25)
                         .queueLimit(10)
                         .build(),
-                testData -> WriteRequest.builder()
-                        .putRequest(SensorEventDataDynamoMapping.asDynamoPutItemRequest(testData)).build(),
+                SensorEventDataDynamoMapping::asDynamoWriteRequest,
                 SensorEventDataDynamoMapping::dynamoKeyStr
         );
         testInputStream.addSink(dynamoDbSink);
@@ -127,8 +127,7 @@ public class IntegrationTest {
                         .batchSize(5)
                         .queueLimit(2)
                         .build(),
-                testData -> WriteRequest.builder()
-                        .putRequest(SensorEventDataDynamoMapping.asDynamoPutItemRequest(testData)).build(),
+                SensorEventDataDynamoMapping::asDynamoWriteRequest,
                 SensorEventDataDynamoMapping::dynamoKeyStr
         );
         testInputStream.addSink(dynamoDbSink);

@@ -10,15 +10,17 @@ import java.util.Map;
 
 public class SensorEventDataDynamoMapping {
 
-    public static PutRequest asDynamoPutItemRequest(SensorEventData testData) {
-        return PutRequest.builder().item(
-                Map.of(
-                        "PK", AttributeValue.builder().s(testData.sensorId).build(),
-                        "SK", AttributeValue.builder().n(testData.timestamp.toString()).build(),
-                        "Field1", AttributeValue.builder().n(testData.field1.toString()).build(),
-                        "Field2", AttributeValue.builder().n(testData.field2.toString()).build(),
-                        "Field3", AttributeValue.builder().n(testData.field3.toString()).build()
-                ))
+    public static WriteRequest asDynamoWriteRequest(SensorEventData testData) {
+        return WriteRequest.builder()
+                .putRequest(PutRequest.builder().item(
+                        Map.of(
+                                "PK", AttributeValue.builder().s(testData.sensorId).build(),
+                                "SK", AttributeValue.builder().n(testData.timestamp.toString()).build(),
+                                "Field1", AttributeValue.builder().n(testData.field1.toString()).build(),
+                                "Field2", AttributeValue.builder().n(testData.field2.toString()).build(),
+                                "Field3", AttributeValue.builder().n(testData.field3.toString()).build()
+                        ))
+                        .build())
                 .build();
     }
 
