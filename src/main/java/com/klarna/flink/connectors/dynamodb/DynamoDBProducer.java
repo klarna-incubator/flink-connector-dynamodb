@@ -34,6 +34,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +42,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * This class is used to send batch requests to DynamoDB
@@ -262,6 +265,14 @@ public class DynamoDBProducer {
                     } catch (ResourceNotFoundException e) {
                         throw new IOException("Resource not found while inserting to dynamodb. do not retry", e);
                     } catch (Exception e) {
+                        if (LOG.isDebugEnabled()) {
+                            String batchPrintout = batchWriteItemRequest.requestItems().values().stream()
+                                    .flatMap(Collection::stream)
+                                    .map(WriteRequest::toString)
+                                    .collect(Collectors.joining(System.getProperty("line.separator")));
+                            LOG.debug(batchPrintout);
+                        }
+                        LOG.error("Error during batch write: {}. Retries: {}, Retry?: {}", e.getMessage(), retries, retry);
                         t = e;
                         retry = true;
                     }
