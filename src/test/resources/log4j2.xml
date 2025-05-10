@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="INFO" monitorInterval="30">
+    <Appenders>
+        <Console name="ConsoleAppender" target="SYSTEM_OUT" follow="true">
+            <PatternLayout pattern="%d %highlight{[%level} %c{3.} – %m%n"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="info"/>
+        <Logger name="com.klarna" level="debug">
+            <AppenderRef ref="ConsoleAppender"/>
+        </Logger>
+    </Loggers>
+</Configuration>

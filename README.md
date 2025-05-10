@@ -14,18 +14,18 @@ At Klarna we use streaming applications extensively. Amazon Kinesis Data Analyti
 final FlinkDynamoDBClientBuilder dynamoDBBuilder = new DynamoDBBuilder() {
     @Override
     public DynamoDBClient build() {
-        return DynamoDBClient.builder().withRegion(Region.EU_WEST_1).build();
+        return DynamoDBClient.builder().region(Region.EU_WEST_1).build();
     }
 };
 
 final DynamoDBSinkWriteRequestMapper<String> mapper = new DynamoDBSinkWriteRequestMapper<>() {
     @Override
     public WriteRequest map(String in) {
-        return WriteRequest.builder().putRequest(PutRequest.builder().build());
+        return WriteRequest.builder().putRequest(PutRequest.builder().build()).build();
     }
 };
 
-final DynamoDBSinkConfig dynamoDBSinkConfig = DynamoDBSinkBaseConfig.builder()
+final DynamoDBSinkConfig dynamoDBSinkConfig = DynamoDBSinkConfig.builder()
     .batchSize(25)
     .queueLimit(10)
     .build();
@@ -61,6 +61,15 @@ implementation com.klarna:flink-connector-dynamodb:1.0.0
 ## How to contribute
 
 See our guide on [contributing](.github/CONTRIBUTING.md).
+
+## How to run the test
+
+Due to the presence of a log4j configuration bundled in a library dependency, unit test execution
+requires the following flag in order to display the logs:
+
+```sh
+mvn test -Dlog4j.configurationFile=log4j2.xml
+```
 
 ## Release History
 
